@@ -13,6 +13,7 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.IMenuListener;
@@ -96,6 +97,7 @@ public class JSPView extends ViewPart {
 	private Action newDataFileMenu;
 	private Action tailAllLogFilesMenu;
 	private Action dockerMenu;
+	private Action cliMenu;
 
 	private FileDialog fd;
 
@@ -252,6 +254,52 @@ public class JSPView extends ViewPart {
 		pullStandaloneXmlMenu.setText("Pull standalone.xml");
 		pullStandaloneXmlMenu.setToolTipText("Pull JBoss standalone.xml configuration from server");
 		pullStandaloneXmlMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_TOOL_UP));
+		
+		// cli menu
+		
+		cliMenu = new Action() {
+			public void run() {
+				
+				
+				File file = new File(Platform.getLocation().toString() + "/.configuration/custom.cli");
+				file.createNewFile();
+
+				try {
+
+					IFileStore fileStore = EFS.getLocalFileSystem().getStore(file.toURI());
+					FileStoreEditorInput editorInput = new FileStoreEditorInput(fileStore);
+
+					IWorkbenchPage page = getViewSite().getPage();
+
+					IEditorPart openEditor = page.openEditor(editorInput, EditorsUI.DEFAULT_TEXT_EDITOR_ID);
+
+					ITextEditor editor = (ITextEditor) openEditor;
+
+					editor.addPropertyListener(new IPropertyListener() {
+						@Override
+						public void propertyChanged(Object source, int propId) {
+							if (propId == IEditorPart.PROP_DIRTY && source instanceof EditorPart) {
+								EditorPart editor = (EditorPart) source;
+								if (editor.isDirty() == false) {
+									RemoteExecutor.executeCLI("custom.cli", viewer);
+									showMessage(item.getFilename() + " cli executed " + item.getUnixName());
+								}
+							}
+						}
+					});
+
+					// addEditorSavedListener(editor);
+				} catch (Exception e) {
+					showError("Error occurred : " + e.getMessage());
+					e.printStackTrace();
+				}
+
+			}
+
+		};
+		cliMenu.setText("Pull standalone.conf");
+		cliMenu.setToolTipText("Execute CLI on Dockerized JBoss");
+		cliMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_TOOL_UP));
 
 		// standalone conf
 

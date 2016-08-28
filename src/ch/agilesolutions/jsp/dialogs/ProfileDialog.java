@@ -41,21 +41,15 @@ import ch.agilesolutions.jsp.utils.RemoteExecutor;
 public class ProfileDialog extends TitleAreaDialog {
 
 	private String profile;
-
-	private List<Profile> profiles;
 	
 	private Text progress;
+	
+	private Text imageName;
 
 	private Map<String, Profile> profileMap = new HashMap<>();
 
 	public ProfileDialog(Shell parentShell) {
 		super(parentShell);
-
-		this.profiles = retrieveJCTProfiles();
-
-		for (Profile profile : profiles) {
-			profileMap.put(String.format("%s@%s", profile.getName(),profile.getHostName()), profile);
-		}
 
 	}
 	
@@ -100,40 +94,16 @@ public class ProfileDialog extends TitleAreaDialog {
 	private void createFirstName(Composite container) {
 		Label lbtFirstName = new Label(container, SWT.NONE);
 
-		lbtFirstName.setText("Archive");
+		lbtFirstName.setText("Enter image name");
 
 		GridData dataFirstName = new GridData();
 		dataFirstName.grabExcessHorizontalSpace = true;
 		dataFirstName.horizontalAlignment = GridData.FILL;
 
-		final Combo c1 = new Combo(container, SWT.READ_ONLY);
-
-		c1.setBounds(50, 50, 450, 1400);
-
-		List<String> names = new ArrayList<String>();
-
-		for (String name : profileMap.keySet()) {
-			names.add(name);
-		}
-
-		String items[] = new String[names.size()];
-
-		items = names.toArray(items);
-
-		c1.setItems(items);
-
-		c1.setText(names.get(0));
-
-		profile = names.get(0);
-
-		c1.addSelectionListener(new SelectionAdapter() {
-			public void widgetSelected(SelectionEvent e) {
-
-				profile = c1.getText();
-
-			}
-		});
-
+		imageName = new Text(container, SWT.BORDER);
+		imageName.setLayoutData(dataFirstName);
+		
+		
 		Label lbtProgress = new Label(container, SWT.NONE);
 		lbtProgress.setText("Progress");
 
@@ -162,13 +132,11 @@ public class ProfileDialog extends TitleAreaDialog {
 
 		showMessage(String.format("Dockerizing %s", pr.getDescription()));
 		
-		prefs.put("id", Integer.toString(pr.getId()));
-		prefs.put("name", pr.getName());
+		prefs.put("name", imageName.getText());
 		prefs.put("port", "8080");
 		prefs.put("adminPort", "9999");
 		prefs.put("debugPort", "8787");
-		prefs.put("jbar", pr.getJbarName());
-		prefs.put("image", System.getProperty("user.name") + "/" +  profileMap.get(profile).getName() + ":" + "8080");
+		prefs.put("image", System.getProperty("user.name") + "/" +  imageName.getText() + ":" + "8080");
 		
 
 		// REST get CLI script from JCT and create docker image
@@ -188,38 +156,6 @@ public class ProfileDialog extends TitleAreaDialog {
 		MessageDialog.openInformation(getShell(), "JSP View", message);
 	}
 
-	private List<Profile> retrieveJCTProfiles() {
-
-		List<Profile> profiles = Collections.emptyList();
-
-		List<Profile> filteredProfiles = new ArrayList<>();
-
-		Client client;
-
-		SslConfigurator sslConfig = SslConfigurator.newInstance()
-		                .trustStoreFile(Platform.getLocation().toString() + "/.configuration/keystore.jks");
-
-		SSLContext sslContext = sslConfig.createSSLContext();
-
-		client = ClientBuilder.newBuilder().sslContext(sslContext).register(GsonMessageBodyHandler.class).build();
-
-		Response response = client.target("https://jct-uat/rest/ara/allProfiles").request().accept(MediaType.APPLICATION_JSON).get();
-
-		if (response.getStatus() == 200) {
-			profiles = response.readEntity(new GenericType<List<Profile>>() {
-			});
-		}
-
-		for (Profile profile : profiles) {
-			if (profile.getEnvironment().equalsIgnoreCase("SIT")) {
-				filteredProfiles.add(profile);
-			}
-
-		}
-
-		return filteredProfiles;
-
-	}
 
 	private String retrieveInitialCli(int id, String name) {
 

@@ -115,6 +115,42 @@ public class RemoteExecutor {
 	}
 
 	/**
+	 * push standalone.xml or standalone.conf files to /JBx/configuration location.
+	 * 
+	 * @param file
+	 * @param viewer
+	 */
+	public static void executeCLI(String file, TextViewer viewer) {
+
+		String path = "none";
+
+		try {
+
+			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+			String prefix = prefs.get("prefix", null);
+
+			Session session = openSession(viewer.getControl().getShell());
+
+			Channel channel = session.openChannel("sftp");
+			channel.connect();
+			ChannelSftp sftpChannel = (ChannelSftp) channel;
+
+			path = Platform.getLocation().toString() + "/.configuration";
+
+			sftpChannel.put(path + "/" + file, "/user/app/runuser/" + prefix.toUpperCase() + "/configuration/" + file);
+
+			sftpChannel.exit();
+
+			session.disconnect();
+
+		} catch (Exception e) {
+			showError(viewer.getControl().getShell(), e.getMessage());
+		}
+
+	}
+
+	/**
 	 * 
 	 * Push data artefact to /user/data/JBx location.
 	 * 
