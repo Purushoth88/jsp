@@ -127,7 +127,7 @@ public class UploadDialog extends TitleAreaDialog {
 
 		Environment env = Environment.getEnvironment();
 		
-		String directory = "/user/data/runuser/" + env.getContainer();
+		String directory = "/u01/data/admrun/" + env.getContainer();
 
 		String items[] = selectedFile.toString().split("\\\\");
 		

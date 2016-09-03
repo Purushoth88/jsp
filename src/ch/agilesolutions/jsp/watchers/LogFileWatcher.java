@@ -14,6 +14,9 @@ public class LogFileWatcher extends Thread {
 	private boolean m_active = false;
 	private BufferedReader m_reader = null;
 	private LogFileListener listener;
+
+	private static String user;
+
 	
 	public static LoggingItem logFile = new LoggingItem();
 
@@ -21,9 +24,9 @@ public class LogFileWatcher extends Thread {
 		
 		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-		String prefix = prefs.get("prefix", null);
+		String container = prefs.get("container", null);
 		
-		logFile.setUnixName("/user/log/runuser/" + prefix.toUpperCase() + "/infra/server.log");
+		logFile.setUnixName("/u01/data/jboss/" + user + "/" + container + "/log/server.log");
 		
 		
 	}
@@ -61,4 +64,12 @@ public class LogFileWatcher extends Thread {
 		}
 	}
 
+	public static String getUser() {
+		return user;
+	}
+
+	public static void setUser(String user) {
+		LogFileWatcher.user = user;
+	}
+	
 }

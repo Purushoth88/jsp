@@ -29,7 +29,7 @@ import ch.agilesolutions.jsp.watchers.LogFileWatcher;
  * 
  * http://www.vogella.com/tutorials/EclipsePlugIn/article.html
  *
- * @author agilesolutions
+ * @author u24279
  * @version $Revision$, $Date$
  */
 public class LogFileView extends ViewPart {

@@ -33,7 +33,7 @@ public class ServerLogWatcher extends Thread {
 				this.listener.update(in);
 				
 				
-				sleep(2 * 1000);
+				sleep(1 * 1000);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}

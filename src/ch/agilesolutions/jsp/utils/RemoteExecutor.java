@@ -14,7 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 
+import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.text.TextViewer;
@@ -32,15 +34,20 @@ import com.jcraft.jsch.SftpATTRS;
 import ch.agilesolutions.jsp.model.ConfigItem;
 import ch.agilesolutions.jsp.model.DataItem;
 import ch.agilesolutions.jsp.model.LoggingItem;
-import ch.agilesolutions.jsp.watchers.LogFileWatcher;
+
+import jsp.Activator;
 
 public class RemoteExecutor {
 
-	private static final String REMOTE_URL = "https://github.com/agilesolutions/jsp/jspstore.git";
+	private static final String REMOTE_URL = "http://stash.agilesolutions.com/scm/jct/jspstore.git";
 
 	private static final String PUBLIC_KEY_FILE = "/ids_openssh";
 
 	private static final int MAX_RETRIES = 2;
+
+	private static Session session = null;
+
+	private static String user;
 
 	// private static Session session = null;
 
@@ -59,17 +66,22 @@ public class RemoteExecutor {
 
 		try {
 
+			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+			String container = prefs.get("container", null);
+
 			Session session = openSession(shell);
 
 			Channel channel = session.openChannel("sftp");
 			channel.connect();
 			ChannelSftp sftpChannel = (ChannelSftp) channel;
 
-			sftpChannel.put(fullFileName, "/user/data/jboss/" + System.getProperty("user.name") + "/deployments/" + fileName);
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
+			                "Push " + Activator.LOCAL_PATH + user + "/" + container + "/deployments/" + fileName));
+
+			sftpChannel.put(fullFileName, Activator.LOCAL_PATH + user + "/" + container + "/deployments/" + fileName);
 
 			sftpChannel.exit();
-
-			session.disconnect();
 
 		} catch (Exception e) {
 
@@ -92,7 +104,7 @@ public class RemoteExecutor {
 
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-			String prefix = prefs.get("prefix", null);
+			String container = prefs.get("container", null);
 
 			Session session = openSession(viewer.getControl().getShell());
 
@@ -102,11 +114,49 @@ public class RemoteExecutor {
 
 			path = Platform.getLocation().toString() + "/.configuration";
 
-			sftpChannel.put(path + "/" + file, "/user/app/runuser/" + prefix.toUpperCase() + "/configuration/" + file);
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
+			                "Push " + Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file));
+
+			sftpChannel.put(path + "/" + file, Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file);
 
 			sftpChannel.exit();
 
-			session.disconnect();
+		} catch (Exception e) {
+			showError(viewer.getControl().getShell(), e.getMessage());
+		}
+
+	}
+
+	/**
+	 * push standalone.xml or standalone.conf files to /JBx/configuration location.
+	 * 
+	 * @param file
+	 * @param viewer
+	 */
+	public static void publishCLI(String file, TextViewer viewer) {
+
+		String path = "none";
+
+		try {
+
+			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+			String container = prefs.get("container", null);
+
+			Session session = openSession(viewer.getControl().getShell());
+
+			Channel channel = session.openChannel("sftp");
+			channel.connect();
+			ChannelSftp sftpChannel = (ChannelSftp) channel;
+
+			path = Platform.getLocation().toString() + "/.configuration";
+
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
+			                "copy " + Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file));
+
+			sftpChannel.put(path + "/" + file, Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file);
+
+			sftpChannel.exit();
 
 		} catch (Exception e) {
 			showError(viewer.getControl().getShell(), e.getMessage());
@@ -122,37 +172,91 @@ public class RemoteExecutor {
 	 */
 	public static void executeCLI(String file, TextViewer viewer) {
 
-		String path = "none";
+		InputStream in = null;
+
+		StringBuilder status = new StringBuilder();
+
+		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+		String name = prefs.get("name", null);
+		String port = prefs.get("port", null);
+		String container = prefs.get("container", null);
 
 		try {
 
-			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+			Session session = openSession();
 
-			String prefix = prefs.get("prefix", null);
+			Channel channel = session.openChannel("exec");
 
-			Session session = openSession(viewer.getControl().getShell());
+			((ChannelExec) channel).setPty(true);
 
-			Channel channel = session.openChannel("sftp");
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "sudo /usr/bin/docker cp " + Activator.LOCAL_PATH + user
+			                + "/" + container + "/configuration/custom.cli " + container
+			                + ":/opt/jboss/wildfly/standalone/configuration/custom.cli" + ";sudo /usr/bin/docker exec -ti " + container
+			                + " /opt/jboss/wildfly/bin/jboss-cli.sh -c --file=/opt/jboss/wildfly/standalone/configuration/custom.cli"));
+
+			((ChannelExec) channel).setCommand("sudo /usr/bin/docker  cp " + Activator.LOCAL_PATH + user + "/" + container
+			                + "/configuration/custom.cli " + container + ":/opt/jboss/wildfly/standalone/configuration/custom.cli"
+			                + ";sudo /usr/bin/docker exec -ti " + container
+			                + " /opt/jboss/wildfly/bin/jboss-cli.sh -c --file=/opt/jboss/wildfly/standalone/configuration/custom.cli");
+
+			channel.setInputStream(null);
+
+			((ChannelExec) channel).setErrStream(System.err);
+
+			in = channel.getInputStream();
+
 			channel.connect();
-			ChannelSftp sftpChannel = (ChannelSftp) channel;
 
-			path = Platform.getLocation().toString() + "/.configuration";
+			byte[] tmp = new byte[1024];
 
-			sftpChannel.put(path + "/" + file, "/user/app/runuser/" + prefix.toUpperCase() + "/configuration/" + file);
+			boolean firsttime = true;
 
-			sftpChannel.exit();
+			int retries = 0;
 
-			session.disconnect();
+			try {
+				while (true) {
+					while (in.available() > 0) {
+						int i = in.read(tmp, 0, 1024);
+						if (i < 0)
+							break;
+						firsttime = false;
+
+						String message = new String(tmp, 0, i);
+
+						status.append(message);
+
+					}
+					if (retries > 20) {
+						break;
+					}
+					try {
+						Thread.sleep(1000);
+						retries++;
+
+					} catch (Exception ee) {
+						showError(viewer.getControl().getShell(), ee.getMessage());
+					}
+				}
+			} catch (Exception e) {
+				showError(viewer.getControl().getShell(), e.getMessage());
+
+			}
+
+			channel.disconnect();
 
 		} catch (Exception e) {
 			showError(viewer.getControl().getShell(), e.getMessage());
+
 		}
+
+		showMessage(viewer.getControl().getShell(), status.toString());
 
 	}
 
 	/**
 	 * 
-	 * Push data artefact to /user/data/JBx location.
+	 * Push data artefact to /u01/data/JBx location.
 	 * 
 	 * @param item
 	 *            holder object which holds all data file coordinates.
@@ -172,8 +276,6 @@ public class RemoteExecutor {
 
 			sftpChannel.exit();
 
-			session.disconnect();
-
 		} catch (Exception e) {
 			showError(shell, e.getMessage());
 		}
@@ -181,7 +283,7 @@ public class RemoteExecutor {
 	}
 
 	/**
-	 * push application specific configuration file to /user/app/JBx/configuration/{application artefact} location.
+	 * push application specific configuration file to /u01/app/JBx/configuration/{application artefact} location.
 	 * 
 	 * @param item
 	 * @param shell
@@ -201,8 +303,6 @@ public class RemoteExecutor {
 
 			sftpChannel.exit();
 
-			session.disconnect();
-
 		} catch (Exception e) {
 			showError(shell, e.getMessage());
 		}
@@ -217,9 +317,11 @@ public class RemoteExecutor {
 	 * @param shell
 	 * @return
 	 */
-	public static String pushDockerArtefacts(StringBuilder status, Text progress, Shell shell, String name) {
+	public static String pushDockerArtefacts(StringBuilder status, Text progress, Shell shell, String name, String baseImage) {
 
 		StringBuilder result = new StringBuilder();
+
+		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
 		status.append("1. Start build preperation....\n");
 
@@ -241,32 +343,43 @@ public class RemoteExecutor {
 			ChannelSftp sftpChannel = (ChannelSftp) channel;
 
 			SftpATTRS attrs;
+
 			try {
-				attrs = sftpChannel.stat("/user/data/jboss/" + System.getProperty("user.name"));
+				attrs = sftpChannel.stat(Activator.LOCAL_PATH + user);
 			} catch (Exception e) {
-				sftpChannel.mkdir("/user/data/jboss/" + System.getProperty("user.name"));
-
-				sftpChannel.mkdir("/user/data/jboss/" + System.getProperty("user.name") + "/docker");
-
-				sftpChannel.mkdir("/user/data/jboss/" + System.getProperty("user.name") + "/docker/customization");
-
-				sftpChannel.mkdir("/user/data/jboss/" + System.getProperty("user.name") + "/deployments");
+				sftpChannel.mkdir(Activator.LOCAL_PATH + user);
 			}
+
+			try {
+				attrs = sftpChannel.stat(Activator.LOCAL_PATH + user + "/" + name);
+			} catch (Exception e) {
+				sftpChannel.mkdir(Activator.LOCAL_PATH + user + "/" + name);
+
+				sftpChannel.mkdir(Activator.LOCAL_PATH + user + "/" + name + "/docker");
+
+				sftpChannel.mkdir(Activator.LOCAL_PATH + user + "/" + name + "/docker/customization");
+
+				sftpChannel.mkdir(Activator.LOCAL_PATH + user + "/" + name + "/deployments");
+
+				sftpChannel.mkdir(Activator.LOCAL_PATH + user + "/" + name + "/configuration");
+
+				sftpChannel.mkdir(Activator.LOCAL_PATH + user + "/" + name + "/log");
+			}
+
+			writeDockerFile(baseImage);
 
 			removeCRLF();
 
-			sftpChannel.put(Platform.getLocation().toString() + "/.configuration/docker/customization/commands.cli",
-			                "/user/data/jboss/" + System.getProperty("user.name") + "/docker/customization/commands.cli");
+			// sftpChannel.put(Platform.getLocation().toString() + "/.configuration/docker/customization/commands.cli",
+			// Activator.LOCAL_PATH + user + "/docker/customization/commands.cli");
 
 			sftpChannel.put(Platform.getLocation().toString() + "/.configuration/docker/customization/execute.stripped",
-			                "/user/data/jboss/" + System.getProperty("user.name") + "/docker/customization/execute.sh");
+			                Activator.LOCAL_PATH + user + "/" + name + "/docker/customization/execute.sh");
 
 			sftpChannel.put(Platform.getLocation().toString() + "/.configuration/docker/Dockerfile",
-			                "/user/data/jboss/" + System.getProperty("user.name") + "/docker/Dockerfile");
+			                Activator.LOCAL_PATH + user + "/" + name + "/docker/Dockerfile");
 
 			sftpChannel.exit();
-
-			session.disconnect();
 
 			status.append("2. Build artefacts copied to Docker server....\n");
 
@@ -317,19 +430,21 @@ public class RemoteExecutor {
 
 			((ChannelExec) channel).setPty(true);
 
-			String user = System.getProperty("user.name");
-
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+			String container = prefs.get("container", null);
+			String myname = prefs.get("name", null);
 
 			String port = prefs.get("port", null);
 
-			prefs.put("image", user + "/" + name + ":" + port);
-			prefs.put("container", user + name + port);
-			prefs.flush();
+			Activator.getDefault().getLog()
+			                .log(new Status(IStatus.INFO, "JSP",
+			                                "cd /u01/data/jboss/" + user + "/" + container + "/docker;chmod -R 777 /u01/data/jboss/" + user
+			                                                + ";sudo /usr/bin/docker build --rm -t " + user + "/" + myname + ":" + port
+			                                                + " ."));
 
-			((ChannelExec) channel).setCommand("cd /user/data/jboss/" + user + "/docker;chmod -R 777 /user/data/jboss/" + user
-			                + "/docker/customization/execute.sh;sudo /usr/bin/docker build --rm -t " + user + "/" + name + ":" + port
-			                + " .");
+			((ChannelExec) channel).setCommand("cd /u01/data/jboss/" + user + "/" + container + "/docker;chmod -R 777 /u01/data/jboss/"
+			                + user + ";sudo /usr/bin/docker build --rm -t " + user + "/" + myname + ":" + port + " .");
 
 			channel.setInputStream(null);
 
@@ -385,7 +500,6 @@ public class RemoteExecutor {
 			}
 
 			channel.disconnect();
-			session.disconnect();
 
 		} catch (Exception e) {
 			System.out.println(e.getMessage());
@@ -408,7 +522,6 @@ public class RemoteExecutor {
 		InputStream in = null;
 
 		status.append("4. Running Docker image....\n");
-		
 
 		progress.setText(status.toString());
 
@@ -430,26 +543,33 @@ public class RemoteExecutor {
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
 			String container = prefs.get("container", null);
+			String image = prefs.get("image", null);
 			String port = prefs.get("port", null);
-			String adminPort = prefs.get("adminPort", null);
 			String debugPort = prefs.get("debugPort", null);
 
-			String user = System.getProperty("user.name");
-			
 			StringBuilder commands = new StringBuilder();
-			
-			commands.append("sudo /usr/bin/docker run -d --name " + container + " -p " + port + ":8080 -p " + adminPort
-			                + ":9990  -p " + debugPort + ":8787 -v /user/data/jboss/" + user
-			                + "/deployments:/opt/jboss/wildfly/standalone/deployments/:rw -v /user/log/jboss/" + user
-			                + ":/opt/jboss/wildfly/standalone/log/:rw " + user + "/" + name + ":" + port);
-			commands.append(";sudo /usr/bin/docker cp " + container
-			                + ":/opt/jboss/wildfly/standalone/configuration/standalone.xml /user/data/jboss/" + user + "/configuration");
-			commands.append(";sudo /usr/bin/docker cp " + container
-			                + ":/opt/jboss/wildfly/bin/standalone.conf /user/data/jboss/" + user + "/configuration");
 
+			commands.append("chown admrun:admjas -R /u01/data/jboss/" + user + "/" + container
+			                + "/deployments;chmod 777 -R /u01/data/jboss/" + user);
+			commands.append(";sudo /usr/bin/docker run -d --name " + container + " -p " + port + ":8080 -p " + debugPort
+			                + ":8787 -v /u01/data/jboss/" + user + "/" + container + "/deployments"
+			                + ":/opt/jboss/wildfly/standalone/deployments/:rw " + " -v /u01/data/jboss/" + user + "/" + name + "/log"
+			                + ":/opt/jboss/wildfly/standalone/log/:rw " + image);
+			commands.append(";sudo /usr/bin/docker cp " + container
+			                + ":/opt/jboss/wildfly/standalone/configuration/standalone.xml /u01/data/jboss/" + user + "/" + name
+			                + "/configuration");
+			commands.append(";sudo /usr/bin/docker cp " + container + ":/opt/jboss/wildfly/bin/standalone.conf /u01/data/jboss/" + user
+			                + "/" + name + "/configuration");
 
-			((ChannelExec) channel).setCommand(commands.toString() );
-			
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
+			                "sudo /usr/bin/docker run -d --name " + container + " -p " + port + ":8080 -p " + debugPort
+			                                + ":8787 -v /u01/data/jboss/" + user + "/" + container + "/deployments"
+			                                + ":/opt/jboss/wildfly/standalone/deployments/:rw " + "-v /u01/data/jboss/" + user + "/" + name
+			                                + "/configuration" + ":/opt/jboss/wildfly/standalone/configuration/:rw " + "-v /u01/data/jboss/"
+			                                + user + "/" + name + "/log" + ":/opt/jboss/wildfly/standalone/log/:rw " + image));
+
+			((ChannelExec) channel).setCommand(commands.toString());
+
 			channel.setInputStream(null);
 
 			((ChannelExec) channel).setErrStream(System.err);
@@ -504,7 +624,6 @@ public class RemoteExecutor {
 			}
 
 			channel.disconnect();
-			session.disconnect();
 
 		} catch (Exception e) {
 			System.out.println(e.getMessage());
@@ -512,6 +631,316 @@ public class RemoteExecutor {
 		}
 
 		return status.toString();
+
+	}
+
+	/**
+	 * push directory with docker artefacts to server.
+	 * 
+	 * @param item
+	 * @param shell
+	 * @return
+	 */
+	public static void commitContainer(Shell shell) {
+
+		InputStream in = null;
+
+		StringBuilder status = new StringBuilder();
+
+		try {
+
+			Session session = openSession();
+
+			Channel channel = session.openChannel("exec");
+
+			((ChannelExec) channel).setPty(true);
+
+			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+			String container = prefs.get("container", null);
+			String image = prefs.get("image", null);
+			String port = prefs.get("port", null);
+			String debugPort = prefs.get("debugPort", null);
+
+			StringBuilder commands = new StringBuilder();
+
+			commands.append("sudo /usr/bin/docker commit -m \"intermediate commit by JSP\" " + container + " " + image);
+
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
+			                "sudo /usr/bin/docker commit -m \"intermediate commit by JSP\" " + container + " " + image));
+
+			((ChannelExec) channel).setCommand(commands.toString());
+
+			channel.setInputStream(null);
+
+			((ChannelExec) channel).setErrStream(System.err);
+
+			in = channel.getInputStream();
+
+			channel.connect();
+
+			byte[] tmp = new byte[1024];
+
+			boolean firsttime = true;
+
+			int retries = 0;
+
+			try {
+				while (true) {
+					while (in.available() > 0) {
+						int i = in.read(tmp, 0, 1024);
+						if (i < 0)
+							break;
+						firsttime = false;
+
+						String message = new String(tmp, 0, i);
+
+						status.append(message);
+
+					}
+					if (retries > 5) {
+						break;
+					}
+					try {
+						Thread.sleep(1000);
+						retries++;
+
+					} catch (Exception ee) {
+						System.out.println(ee.getMessage());
+					}
+				}
+			} catch (Exception e) {
+				System.out.println(e.getMessage());
+
+			}
+
+			channel.disconnect();
+
+		} catch (Exception e) {
+			System.out.println(e.getMessage());
+
+		}
+
+		MessageDialog.openInformation(shell, "Container commit", status.toString());
+
+	}
+
+	/**
+	 * push directory with docker artefacts to server.
+	 * 
+	 * @param item
+	 * @param shell
+	 * @return
+	 */
+	public static String dockerCopyFile(Shell shell, String directory, String file) {
+
+		InputStream in = null;
+
+		StringBuilder status = new StringBuilder();
+
+		try {
+
+			Session session = openSession();
+
+			Channel channel = session.openChannel("exec");
+
+			((ChannelExec) channel).setPty(true);
+
+			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+			String container = prefs.get("container", null);
+
+			StringBuilder commands = new StringBuilder();
+
+			commands.append("sudo /usr/bin/docker exec -ti " 
+			                + container + " mkdir /opt/jboss/wildfly/standalone/configuration/" + directory);
+			commands.append(";sudo /usr/bin/docker cp " + Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file + " "
+			                + container + ":/opt/jboss/wildfly/standalone/configuration/" + directory + "/" + file);
+
+			Activator.getDefault().getLog()
+			                .log(new Status(IStatus.INFO, "JSP",
+			                                "sudo /usr/bin/docker cp " + Activator.LOCAL_PATH + user + "/" + container + "/configuration/"
+			                                                + file + " " + container + ":/opt/jboss/wildfly/standalone/configuration/"
+			                                                + file));
+
+			((ChannelExec) channel).setCommand(commands.toString());
+
+			channel.setInputStream(null);
+
+			((ChannelExec) channel).setErrStream(System.err);
+
+			in = channel.getInputStream();
+
+			channel.connect();
+
+			byte[] tmp = new byte[1024];
+
+			boolean firsttime = true;
+
+			int retries = 0;
+
+			try {
+				while (true) {
+					while (in.available() > 0) {
+						int i = in.read(tmp, 0, 1024);
+						if (i < 0)
+							break;
+						firsttime = false;
+
+						String message = new String(tmp, 0, i);
+
+						status.append(message);
+
+					}
+					if (retries > 5) {
+						break;
+					}
+					try {
+						Thread.sleep(1000);
+						retries++;
+
+					} catch (Exception ee) {
+						System.out.println(ee.getMessage());
+					}
+				}
+			} catch (Exception e) {
+				System.out.println(e.getMessage());
+
+			}
+
+			channel.disconnect();
+
+		} catch (Exception e) {
+			System.out.println(e.getMessage());
+
+		}
+
+		return status.toString();
+
+	}
+
+	/**
+	 * push directory with docker artefacts to server.
+	 * 
+	 * @param item
+	 * @param shell
+	 * @return
+	 */
+	public static void copyFile(TextViewer viewer, String directory, String file) {
+
+		try {
+
+			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+			String container = prefs.get("container", null);
+
+			Session session = openSession(viewer.getControl().getShell());
+
+			Channel channel = session.openChannel("sftp");
+			channel.connect();
+			ChannelSftp sftpChannel = (ChannelSftp) channel;
+
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Push " + directory + "/" + file));
+
+			sftpChannel.put(directory + "/" + file, Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file);
+
+			sftpChannel.exit();
+
+		} catch (Exception e) {
+			showError(viewer.getControl().getShell(), e.getMessage());
+		}
+
+	}
+
+	/**
+	 * push directory with docker artefacts to server.
+	 * 
+	 * @param item
+	 * @param shell
+	 * @return
+	 */
+	public static void synchronizeConfig(Shell shell) {
+
+		InputStream in = null;
+
+		try {
+
+			Session session = openSession();
+
+			Channel channel = session.openChannel("exec");
+
+			((ChannelExec) channel).setPty(true);
+
+			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+			String container = prefs.get("container", null);
+
+			StringBuilder commands = new StringBuilder();
+
+			commands.append("sudo /usr/bin/docker cp " + container
+			                + ":/opt/jboss/wildfly/standalone/configuration/standalone.xml /u01/data/jboss/" + user + "/" + container
+			                + "/configuration");
+			commands.append(";sudo /usr/bin/docker cp " + container + ":/opt/jboss/wildfly/bin/standalone.conf /u01/data/jboss/" + user
+			                + "/" + container + "/configuration");
+			commands.append(";chown admrun:admjas -R /u01/data/jboss/" + user + "/" + container + "/configuration");
+
+			Activator.getDefault().getLog()
+			                .log(new Status(IStatus.INFO, "JSP",
+			                                "sudo /usr/bin/docker cp " + container
+			                                                + ":/opt/jboss/wildfly/standalone/configuration/standalone.xml /u01/data/jboss/"
+			                                                + user + "/" + container + "/configuration;sudo /usr/bin/docker cp " + container
+			                                                + ":/opt/jboss/wildfly/bin/standalone.conf /u01/data/jboss/" + user + "/"
+			                                                + container + "/configuration;chown admrun:admjas -R /u01/data/jboss/" + user
+			                                                + "/" + container + "/configuration"));
+
+			((ChannelExec) channel).setCommand(commands.toString());
+
+			channel.setInputStream(null);
+
+			((ChannelExec) channel).setErrStream(System.err);
+
+			in = channel.getInputStream();
+
+			channel.connect();
+
+			byte[] tmp = new byte[1024];
+
+			boolean firsttime = true;
+
+			int retries = 0;
+
+			try {
+				while (true) {
+					while (in.available() > 0) {
+						int i = in.read(tmp, 0, 1024);
+						if (i < 0)
+							break;
+						firsttime = false;
+
+						String message = new String(tmp, 0, i);
+
+					}
+					if (retries > 5) {
+						break;
+					}
+					try {
+						Thread.sleep(1000);
+						retries++;
+
+					} catch (Exception ee) {
+						showError(shell, ee.getMessage());
+					}
+				}
+			} catch (Exception e) {
+				showError(shell, e.getMessage());
+
+			}
+
+			channel.disconnect();
+
+		} catch (Exception e) {
+			showError(shell, e.getMessage());
+		}
 
 	}
 
@@ -529,13 +958,11 @@ public class RemoteExecutor {
 
 		ConfigItem configItem = null;
 
-		String user = System.getProperty("user.name");
-
 		try {
 
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-			String prefix = prefs.get("prefix", null);
+			String container = prefs.get("container", null);
 
 			Session session = openSession(viewer.getControl().getShell());
 
@@ -544,6 +971,9 @@ public class RemoteExecutor {
 			ChannelSftp sftpChannel = (ChannelSftp) channel;
 
 			path = Platform.getLocation().toString() + "/.configuration";
+
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
+			                "Pull config file " + Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file));
 
 			File theDir = new File(path);
 
@@ -561,9 +991,12 @@ public class RemoteExecutor {
 						}
 					}
 
-					configItem = new ConfigItem(file, "/user/data/jboss/" + user + "/configuration/" + file, path + "/" + file);
+					configItem = new ConfigItem(file, Activator.LOCAL_PATH + user + "/configuration/" + file, path + "/" + file);
 
-					sftpChannel.get("/user/data/jboss/" + user + "/configuration/" + file, path + "/" + file);
+					Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
+					                "Pull config " + Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file));
+
+					sftpChannel.get(Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file, path + "/" + file);
 
 					sftpChannel.exit();
 
@@ -572,15 +1005,16 @@ public class RemoteExecutor {
 				}
 			} else {
 
-				configItem = new ConfigItem(file, "/user/data/jboss/" + user + "/configuration/" + file, path + "/" + file);
+				configItem = new ConfigItem(file, Activator.LOCAL_PATH + user + "/configuration/" + file, path + "/" + file);
 
-				sftpChannel.get("/user/data/jboss/" + user + "/configuration/" + file, path + "/" + file);
+				Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
+				                "Pull config" + Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file));
+
+				sftpChannel.get(Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file, path + "/" + file);
 
 				sftpChannel.exit();
 
 			}
-
-			session.disconnect();
 
 		} catch (Exception e) {
 			showError(viewer.getControl().getShell(), e.getMessage());
@@ -592,7 +1026,7 @@ public class RemoteExecutor {
 
 	/**
 	 * 
-	 * pull application specific configuration artefact from /user/app/JBx/configuration/{application artefact} location.
+	 * pull application specific configuration artefact from /u01/app/JBx/configuration/{application artefact} location.
 	 * 
 	 * @param directory
 	 *            application specific directory location derived from the artefact id of the deployment.
@@ -611,7 +1045,7 @@ public class RemoteExecutor {
 
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-			String prefix = prefs.get("prefix", null);
+			String container = prefs.get("container", null);
 
 			Session session = openSession(shell);
 
@@ -637,15 +1071,16 @@ public class RemoteExecutor {
 			String strippedFilename = file.substring(file.lastIndexOf("/") + 1);
 
 			configItem = new ConfigItem(strippedFilename,
-			                "/user/app/runuser/" + prefix.toUpperCase() + "/configuration/" + directory + "/" + file,
+			                Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + directory + "/" + file,
 			                path + "/" + strippedFilename);
 
-			sftpChannel.get("/user/app/runuser/" + prefix.toUpperCase() + "/configuration/" + directory + "/" + file,
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Pull config artefact " + Activator.LOCAL_PATH + user + "/"
+			                + container + "/configuration/" + directory + "/" + file));
+
+			sftpChannel.get(Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + directory + "/" + file,
 			                path + "/" + strippedFilename);
 
 			sftpChannel.exit();
-
-			session.disconnect();
 
 		} catch (Exception e) {
 			showError(shell, e.getMessage());
@@ -674,7 +1109,7 @@ public class RemoteExecutor {
 
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-			String prefix = prefs.get("prefix", null);
+			String container = prefs.get("container", null);
 
 			Session session = openSession(shell);
 
@@ -699,14 +1134,12 @@ public class RemoteExecutor {
 
 			String strippedFilename = file.substring(file.lastIndexOf("/") + 1);
 
-			loggingItem = new LoggingItem(strippedFilename, "/user/log/runuser/" + prefix.toUpperCase() + "/" + file,
+			loggingItem = new LoggingItem(strippedFilename, Activator.LOCAL_PATH + user + "/" + container + "/log/" + file,
 			                path + "/" + strippedFilename);
 
-			sftpChannel.get("/user/log/runuser/" + prefix.toUpperCase() + "/" + file, path + "/" + strippedFilename);
+			sftpChannel.get(Activator.LOCAL_PATH + user + "/" + container + "/log/" + file, path + "/" + strippedFilename);
 
 			sftpChannel.exit();
-
-			session.disconnect();
 
 		} catch (Exception e) {
 			showError(shell, e.getMessage());
@@ -735,7 +1168,7 @@ public class RemoteExecutor {
 
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-			String environment = prefs.get("environment", null);
+			String container = prefs.get("container", null);
 
 			Session session = openSession(shell);
 
@@ -760,14 +1193,11 @@ public class RemoteExecutor {
 
 			String strippedFilename = file.substring(file.lastIndexOf("/") + 1);
 
-			dataItem = new DataItem(strippedFilename, "/user/data/runuser/" + System.getProperty("user.name") + "/" + file,
-			                path + "/" + strippedFilename);
+			dataItem = new DataItem(strippedFilename, "/u01/data/admrun/" + user + "/" + file, path + "/" + strippedFilename);
 
-			sftpChannel.get("/user/data/runuser/" + System.getProperty("user.name") + "/" + file, path + "/" + strippedFilename);
+			sftpChannel.get("/u01/data/admrun/" + user + "/" + file, path + "/" + strippedFilename);
 
 			sftpChannel.exit();
-
-			session.disconnect();
 
 		} catch (Exception e) {
 			showError(shell, e.getMessage());
@@ -796,11 +1226,9 @@ public class RemoteExecutor {
 			channel.connect();
 			ChannelSftp sftpChannel = (ChannelSftp) channel;
 
-			sftpChannel.get("/user/data/runuser/" + System.getProperty("user.name") + "/" + file, destination);
+			sftpChannel.get("/u01/data/admrun/" + user + "/" + file, destination);
 
 			sftpChannel.exit();
-
-			session.disconnect();
 
 		} catch (Exception e) {
 			showError(shell, e.getMessage());
@@ -825,9 +1253,9 @@ public class RemoteExecutor {
 
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-			String prefix = prefs.get("prefix", null);
+			String container = prefs.get("container", null);
 
-			Session session = openSession(viewer.getControl().getShell());
+			Session session = openSession();
 
 			Channel channel = session.openChannel("sftp");
 			channel.connect();
@@ -837,15 +1265,16 @@ public class RemoteExecutor {
 
 			File theDir = new File(path);
 
-			String user = System.getProperty("user.name");
-
 			// if the directory does not exist, create it
 			if (!theDir.exists()) {
 
 				try {
 					theDir.mkdir();
 
-					sftpChannel.get("/user/log/jboss/" + user + "/server.log", path + "/server.log");
+					Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
+					                "Pull server log " + Activator.LOCAL_PATH + user + "/" + container + "/log/server.log"));
+
+					sftpChannel.get(Activator.LOCAL_PATH + user + "/" + container + "/log/server.log", path + "/server.log");
 
 					sftpChannel.exit();
 
@@ -856,13 +1285,14 @@ public class RemoteExecutor {
 				}
 			} else {
 
-				sftpChannel.get("/user/log/jboss/" + user + "/server.log", path + "/server.log");
+				Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
+				                "Pull server log " + Activator.LOCAL_PATH + user + "/" + container + "/log/server.log"));
+
+				sftpChannel.get(Activator.LOCAL_PATH + user + "/" + container + "/log/server.log", path + "/server.log");
 
 				sftpChannel.exit();
 
 			}
-
-			session.disconnect();
 
 		} catch (Exception e) {
 			showError(viewer.getControl().getShell(), e.getMessage());
@@ -882,6 +1312,10 @@ public class RemoteExecutor {
 
 		InputStream in = null;
 
+		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+		String container = prefs.get("container", null);
+
 		StringBuilder builder = new StringBuilder();
 
 		try {
@@ -890,7 +1324,10 @@ public class RemoteExecutor {
 
 			Channel channel = session.openChannel("exec");
 
-			((ChannelExec) channel).setCommand("rm /user/log/jboss/server.log");
+			Activator.getDefault().getLog()
+			                .log(new Status(IStatus.INFO, "JSP", "rm /u01/data/jboss/" + user + "/" + container + "/log/server.log"));
+
+			((ChannelExec) channel).setCommand("rm /u01/data/jboss/" + user + "/" + container + "/log/server.log");
 
 			channel.setInputStream(null);
 
@@ -934,7 +1371,6 @@ public class RemoteExecutor {
 				e.printStackTrace();
 			}
 			channel.disconnect();
-			session.disconnect();
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -962,15 +1398,16 @@ public class RemoteExecutor {
 
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-			String prefix = prefs.get("prefix", null);
+			String container = prefs.get("container", null);
 
 			Session session = openSession(null);
 
 			Channel channel = session.openChannel("exec");
 
-			String user = System.getProperty("user.name");
+			// Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "tail -n 100 /u01/data/jboss/" + user + "/" + container +
+			// "/log/server.log"));
 
-			((ChannelExec) channel).setCommand("tail -n 100 /user/log/jboss/" + user + "/server.log");
+			((ChannelExec) channel).setCommand("tail -n 100 /u01/data/jboss/" + user + "/" + container + "/log/server.log");
 
 			channel.setInputStream(null);
 
@@ -1012,7 +1449,6 @@ public class RemoteExecutor {
 				e.printStackTrace();
 			}
 			channel.disconnect();
-			session.disconnect();
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -1039,13 +1475,13 @@ public class RemoteExecutor {
 
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-			String prefix = prefs.get("prefix", null);
+			String container = prefs.get("container", null);
 
 			Session session = openSession(null);
 
 			Channel channel = session.openChannel("exec");
 
-			((ChannelExec) channel).setCommand("tail -n 100 " + LogFileWatcher.logFile.getUnixName());
+			((ChannelExec) channel).setCommand("tail -n 100 " + Activator.LOCAL_PATH + user + "/" + container + "/log/server.log");
 
 			channel.setInputStream(null);
 
@@ -1087,7 +1523,6 @@ public class RemoteExecutor {
 				e.printStackTrace();
 			}
 			channel.disconnect();
-			session.disconnect();
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -1122,7 +1557,7 @@ public class RemoteExecutor {
 			channel = session.openChannel("exec");
 
 			((ChannelExec) channel).setCommand(
-			                "cd /user/app/runuser/" + prefix.toUpperCase() + "/configuration/" + directoryName + ";find . -type f");
+			                "cd /u01/app/admrun/" + prefix.toUpperCase() + "/configuration/" + directoryName + ";find . -type f");
 
 			channel.setInputStream(null);
 
@@ -1150,8 +1585,6 @@ public class RemoteExecutor {
 					ee.printStackTrace();
 				}
 			}
-
-			session.disconnect();
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -1176,7 +1609,7 @@ public class RemoteExecutor {
 
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-			String prefix = prefs.get("prefix", null);
+			String container = prefs.get("container", null);
 
 			Session session = openSession(null);
 
@@ -1184,7 +1617,7 @@ public class RemoteExecutor {
 
 			channel = session.openChannel("exec");
 
-			((ChannelExec) channel).setCommand("cd /user/log/" + System.getProperty("user.name") + "/jboss;find . -type f");
+			((ChannelExec) channel).setCommand("cd /u01/log/" + user + "/jboss;find . -type f");
 
 			channel.setInputStream(null);
 
@@ -1213,8 +1646,6 @@ public class RemoteExecutor {
 				}
 			}
 
-			session.disconnect();
-
 		} catch (Exception e) {
 			e.printStackTrace();
 
@@ -1228,7 +1659,7 @@ public class RemoteExecutor {
 	 * 
 	 * @return
 	 */
-	public static StringBuilder listDockerPorts() {
+	public static StringBuilder listDockerPorts(String imageName) {
 
 		InputStream in = null;
 
@@ -1280,25 +1711,99 @@ public class RemoteExecutor {
 				ports.put(scan.nextLine(), "value");
 			}
 
-			for (int availablePort = 8080; availablePort < 9090; availablePort++) {
+			for (int availablePort = 9000; availablePort < 9090; availablePort++) {
 				if (!ports.containsKey(Integer.toString(availablePort))) {
 					prefs.put("port", Integer.toString(availablePort));
 					// shift them all up with the new offset
 					prefs.put("adminPort", Integer.toString(9999 + (availablePort - 8080)));
 					prefs.put("debugPort", Integer.toString(8787 + (availablePort - 8080)));
+
+					prefs.put("image", RemoteExecutor.getUser() + "/" + imageName + ":" + availablePort);
+					prefs.put("container", RemoteExecutor.getUser() + imageName + availablePort);
+
 					prefs.flush();
 					break;
 				}
 
 			}
 
-			session.disconnect();
-
 		} catch (Exception e) {
 			e.printStackTrace();
 
 		}
 		return builder;
+
+	}
+
+	/**
+	 * List all log files available to a combobox to be selected.
+	 * 
+	 * @return
+	 */
+	public static List<String> listBaseImages() {
+
+		InputStream in = null;
+
+		List<String> images = new ArrayList<>();
+
+		String result = null;
+
+		try {
+
+			Session session = openSession();
+
+			Channel channel = session.openChannel("exec");
+
+			((ChannelExec) channel).setPty(true);
+
+			Activator.getDefault().getLog().log(
+			                new Status(IStatus.INFO, "JSP", "list images " + "sudo /usr/bin/docker images | awk '$1 ~ /jsp/ { print $1}'"));
+
+			((ChannelExec) channel).setCommand("sudo /usr/bin/docker images | awk '$1 ~ /jsp/ { print $1}'");
+
+			channel.setInputStream(null);
+
+			((ChannelExec) channel).setErrStream(System.err);
+
+			in = channel.getInputStream();
+
+			channel.connect();
+
+			byte[] tmp = new byte[1024];
+
+			while (true) {
+				while (in.available() > 0) {
+					int i = in.read(tmp, 0, 1024);
+					if (i < 0)
+						break;
+					result = new String(tmp, 0, i);
+				}
+				if (channel.isClosed()) {
+					break;
+				}
+				try {
+					Thread.sleep(1000);
+				} catch (Exception ee) {
+					ee.printStackTrace();
+				}
+			}
+
+		} catch (Exception e) {
+			e.printStackTrace();
+
+		}
+
+		Scanner scan = new Scanner(result.toString());
+		while (scan.hasNextLine()) {
+			String line = scan.nextLine();
+			if (line.startsWith("jsp")) {
+				if (!images.contains(line)) {
+					images.add(line);
+				}
+			}
+		}
+
+		return images;
 
 	}
 
@@ -1323,7 +1828,7 @@ public class RemoteExecutor {
 
 			((ChannelExec) channel).setPty(true);
 
-			((ChannelExec) channel).setCommand("sudo /usr/bin/docker ps -a  --filter \"name=user\" --format \"{{.Names}}\"");
+			((ChannelExec) channel).setCommand("sudo /usr/bin/docker ps -a  --filter \"name=u\" --format \"{{.Names}}\"");
 
 			channel.setInputStream(null);
 
@@ -1356,15 +1861,12 @@ public class RemoteExecutor {
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
 			Scanner scan = new Scanner(builder.toString());
-			String userName = System.getProperty("user.name");
 			while (scan.hasNextLine()) {
 				String name = scan.nextLine();
-				if (name.startsWith(userName)) {
+				if (name.startsWith(user)) {
 					images.add(name);
 				}
 			}
-
-			session.disconnect();
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -1373,7 +1875,6 @@ public class RemoteExecutor {
 		return images;
 
 	}
-
 
 	/**
 	 * List all log files available to a combobox to be selected.
@@ -1396,7 +1897,8 @@ public class RemoteExecutor {
 
 			((ChannelExec) channel).setPty(true);
 
-			((ChannelExec) channel).setCommand("sudo /usr/bin/docker ps -a  --filter name=user --filter status=exited --format \"{{.Names}}\"");
+			((ChannelExec) channel).setCommand(
+			                "sudo /usr/bin/docker ps -a  --filter name=" + user + " --filter status=exited --format \"{{.Names}}\"");
 
 			channel.setInputStream(null);
 
@@ -1429,15 +1931,12 @@ public class RemoteExecutor {
 			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
 			Scanner scan = new Scanner(builder.toString());
-			String userName = System.getProperty("user.name");
 			while (scan.hasNextLine()) {
 				String name = scan.nextLine();
-				if (name.startsWith(userName)) {
+				if (name.startsWith(user)) {
 					images.add(name);
 				}
 			}
-
-			session.disconnect();
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -1447,7 +1946,6 @@ public class RemoteExecutor {
 
 	}
 
-	
 	/**
 	 * List all available data directory for a specific JB jboss instance.
 	 * 
@@ -1469,7 +1967,7 @@ public class RemoteExecutor {
 
 			channel = session.openChannel("exec");
 
-			((ChannelExec) channel).setCommand("cd /user/data/runuser/" + System.getProperty("user.name") + ";find . -type d");
+			((ChannelExec) channel).setCommand("cd /u01/data/admrun/" + user + ";find . -type d");
 
 			channel.setInputStream(null);
 
@@ -1497,8 +1995,6 @@ public class RemoteExecutor {
 					ee.printStackTrace();
 				}
 			}
-
-			session.disconnect();
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -1533,7 +2029,7 @@ public class RemoteExecutor {
 
 			channel = session.openChannel("exec");
 
-			((ChannelExec) channel).setCommand("cd /user/data/runuser/" + System.getProperty("user.name") + ";find . -type f");
+			((ChannelExec) channel).setCommand("cd /u01/data/admrun/" + user + ";find . -type f");
 
 			channel.setInputStream(null);
 
@@ -1562,8 +2058,6 @@ public class RemoteExecutor {
 				}
 			}
 
-			session.disconnect();
-
 		} catch (Exception e) {
 			e.printStackTrace();
 
@@ -1571,7 +2065,6 @@ public class RemoteExecutor {
 		return builder;
 
 	}
-	
 
 	public static StringBuilder removeImageAndContainer(String name) {
 
@@ -1581,15 +2074,20 @@ public class RemoteExecutor {
 
 		try {
 
-			String image = String.format("%s/%s:%s", name.substring(0,6),name.substring(6, name.length()-4),name.substring(name.length()-4));
-			
+			String image = String.format("%s/%s:%s", name.substring(0, 6), name.substring(6, name.length() - 4),
+			                name.substring(name.length() - 4));
+
 			Session session = openSession();
 
 			Channel channel = session.openChannel("exec");
 
 			((ChannelExec) channel).setPty(true);
 
-			((ChannelExec) channel).setCommand("sudo /usr/bin/docker rm " + name + ";sudo /usr/bin/docker rmi " + image);
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "sudo /usr/bin/docker rm " + name
+			                + ";sudo /usr/bin/docker rmi " + image + ";rm -R /u01/data/jboss/" + user + "/deployments/" + name));
+
+			((ChannelExec) channel).setCommand("sudo /usr/bin/docker rm " + name + ";sudo /usr/bin/docker rmi " + image
+			                + ";rm -R /u01/data/jboss/" + user + "/deployments/" + name);
 
 			channel.setInputStream(null);
 
@@ -1632,7 +2130,6 @@ public class RemoteExecutor {
 			}
 
 			channel.disconnect();
-			session.disconnect();
 
 		} catch (Exception e) {
 			System.out.println(e.getMessage());
@@ -1640,7 +2137,6 @@ public class RemoteExecutor {
 		return builder;
 
 	}
-
 
 	/**
 	 * Get the configuration directory for a specific deployment.
@@ -1664,7 +2160,7 @@ public class RemoteExecutor {
 			Channel channel = session.openChannel("exec");
 
 			((ChannelExec) channel).setCommand(
-			                "cd /user/app/runuser/" + prefix.toUpperCase() + "/configuration;find -name configuration.properties");
+			                "cd /u01/app/admrun/" + prefix.toUpperCase() + "/configuration;find -name configuration.properties");
 
 			channel.setInputStream(null);
 
@@ -1694,8 +2190,6 @@ public class RemoteExecutor {
 
 			channel.disconnect();
 
-			session.disconnect();
-
 		} catch (Exception e) {
 			e.printStackTrace();
 
@@ -1721,6 +2215,8 @@ public class RemoteExecutor {
 			Channel channel = session.openChannel("exec");
 
 			((ChannelExec) channel).setPty(true);
+
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "sudo /usr/bin/docker stop " + container));
 
 			((ChannelExec) channel).setCommand("sudo /usr/bin/docker stop " + container);
 
@@ -1768,7 +2264,6 @@ public class RemoteExecutor {
 			}
 
 			channel.disconnect();
-			session.disconnect();
 
 		} catch (Exception e) {
 			showError(viewer.getControl().getShell(), e.getMessage());
@@ -1795,6 +2290,8 @@ public class RemoteExecutor {
 			Channel channel = session.openChannel("exec");
 
 			((ChannelExec) channel).setPty(true);
+
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "sudo /usr/bin/docker stop " + container));
 
 			((ChannelExec) channel).setCommand("sudo /usr/bin/docker stop " + container);
 
@@ -1839,7 +2336,6 @@ public class RemoteExecutor {
 			}
 
 			channel.disconnect();
-			session.disconnect();
 
 		} catch (Exception e) {
 			System.out.println(e.getMessage());
@@ -1851,22 +2347,18 @@ public class RemoteExecutor {
 	public static StringBuilder startJBoss(TextViewer viewer) {
 
 		InputStream in = null;
-		
-		StringBuilder commands = new StringBuilder();
 
-		String user = System.getProperty("user.name");
+		StringBuilder commands = new StringBuilder();
 
 		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
 		String container = prefs.get("container", null);
-		
+
 		StringBuilder builder = new StringBuilder();
-		
+
+		Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "sudo /usr/bin/docker start " + container));
+
 		commands.append("sudo /usr/bin/docker start " + container);
-		commands.append(";sudo /usr/bin/docker cp " + container
-		                + ":/opt/jboss/wildfly/standalone/configuration/standalone.xml /user/data/jboss/" + user + "/configuration");
-		commands.append(";sudo /usr/bin/docker cp " + container
-		                + ":/opt/jboss/wildfly/bin/standalone.conf /user/data/jboss/" + user + "/configuration");
 
 		try {
 
@@ -1876,7 +2368,7 @@ public class RemoteExecutor {
 
 			((ChannelExec) channel).setPty(true);
 
-			((ChannelExec) channel).setCommand(commands.toString() );
+			((ChannelExec) channel).setCommand(commands.toString());
 
 			channel.setInputStream(null);
 
@@ -1924,7 +2416,6 @@ public class RemoteExecutor {
 			}
 
 			channel.disconnect();
-			session.disconnect();
 
 		} catch (Exception e) {
 			showError(viewer.getControl().getShell(), e.getMessage());
@@ -1940,20 +2431,15 @@ public class RemoteExecutor {
 
 		StringBuilder builder = new StringBuilder();
 
-		String user = System.getProperty("user.name");
-
 		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
 		String container = prefs.get("container", null);
 
 		StringBuilder commands = new StringBuilder();
 
+		Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "sudo /usr/bin/docker start " + container));
+
 		commands.append("sudo /usr/bin/docker start " + container);
-		commands.append(";sudo /usr/bin/docker cp " + container
-		                + ":/opt/jboss/wildfly/standalone/configuration/standalone.xml /user/data/jboss/" + user + "/configuration");
-		commands.append(";sudo /usr/bin/docker cp " + container
-		                + ":/opt/jboss/wildfly/bin/standalone.conf /user/data/jboss/" + user + "/configuration");
-		
 
 		try {
 
@@ -2009,7 +2495,6 @@ public class RemoteExecutor {
 			}
 
 			channel.disconnect();
-			session.disconnect();
 
 		} catch (Exception e) {
 			System.out.println(e.getMessage());
@@ -2045,11 +2530,11 @@ public class RemoteExecutor {
 			}
 		}
 
-		Session session = null;
-
 		if (session == null) {
 
 			JSch jsch = new JSch();
+
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Start opening SSH session"));
 
 			String privateKey = path + PUBLIC_KEY_FILE;
 			try {
@@ -2060,7 +2545,7 @@ public class RemoteExecutor {
 
 				String environment = prefs.get("environment", null);
 
-				session = jsch.getSession("runuser", environment, 22);
+				session = jsch.getSession("admrun", Activator.DOCKER_HOST, 22);
 
 				session.setUserInfo(new IdsUserInfo());
 
@@ -2073,8 +2558,34 @@ public class RemoteExecutor {
 				showError(shell, e.getMessage());
 			}
 
-		}
+		} else if (!session.isConnected()) {
+			String privateKey = path + PUBLIC_KEY_FILE;
+			try {
+				JSch jsch = new JSch();
 
+				jsch.addIdentity(privateKey, "");
+
+				Preferences prefs = InstanceScope.INSTANCE.getNode("ids");
+
+				String environment = prefs.get("environment", null);
+
+				session = jsch.getSession("admrun", Activator.DOCKER_HOST, 22);
+
+				session.setUserInfo(new IdsUserInfo());
+
+				session.setConfig("StrictHostKeyChecking", "no");
+				session.setTimeout(15000);
+
+				session.connect();
+
+				Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Opened sucessfully SSH session"));
+
+			} catch (Exception e) {
+				Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "SSH open connection failed" + e.getMessage()));
+				showError(shell, e.getMessage());
+			}
+
+		}
 		return session;
 
 	}
@@ -2109,9 +2620,9 @@ public class RemoteExecutor {
 			}
 		}
 
-		Session session = null;
-
 		if (session == null) {
+
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Start opening SSH session"));
 
 			JSch jsch = new JSch();
 
@@ -2124,7 +2635,34 @@ public class RemoteExecutor {
 
 				String environment = prefs.get("environment", null);
 
-				session = jsch.getSession("runuser", environment, 22);
+				session = jsch.getSession("admrun", Activator.DOCKER_HOST, 22);
+
+				session.setUserInfo(new IdsUserInfo());
+
+				session.setConfig("StrictHostKeyChecking", "no");
+				session.setTimeout(15000);
+
+				session.connect();
+
+				Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Opened sucessfully SSH session"));
+
+			} catch (Exception e) {
+				Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "SSH open connection failed" + e.getMessage()));
+				System.out.println(e.getMessage());
+			}
+
+		} else if (!session.isConnected()) {
+			String privateKey = path + PUBLIC_KEY_FILE;
+			try {
+				JSch jsch = new JSch();
+
+				jsch.addIdentity(privateKey, "");
+
+				Preferences prefs = InstanceScope.INSTANCE.getNode("ids");
+
+				String environment = prefs.get("environment", null);
+
+				session = jsch.getSession("admrun", Activator.DOCKER_HOST, 22);
 
 				session.setUserInfo(new IdsUserInfo());
 
@@ -2179,6 +2717,39 @@ public class RemoteExecutor {
 			e.printStackTrace();
 		}
 
+	}
+
+	private static void writeDockerFile(String baseImage) {
+
+		String resultName = Platform.getLocation().toString() + "/.configuration/docker/Dockerfile";
+
+		try {
+
+			PrintWriter pw = new PrintWriter(resultName);
+
+			pw.write("FROM " + baseImage + "\n");
+
+			pw.write("ADD customization /opt/jboss/wildfly/customization/" + "\n");
+
+			pw.write("RUN /opt/jboss/wildfly/customization/execute.sh" + "\n");
+
+			pw.write("CMD [\"/opt/jboss/wildfly/bin/standalone.sh\", \"-b\", \"0.0.0.0\", \"-bmanagement\", \"0.0.0.0\"]" + "\n");
+
+			pw.close();
+
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+	}
+
+	public static String getUser() {
+		return user;
+	}
+
+	public static void setUser(String user) {
+		RemoteExecutor.user = user;
 	}
 
 }

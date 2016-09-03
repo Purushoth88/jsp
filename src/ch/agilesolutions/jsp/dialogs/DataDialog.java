@@ -165,7 +165,7 @@ public class DataDialog extends TitleAreaDialog {
 
 		Environment env = Environment.getEnvironment();
 
-		directory = "/user/data/runuser/" + env.getImage();
+		directory = "/u01/data/admrun/" + env.getImage();
 
 		final DataItem item = RemoteExecutor.pullDataArtefact(directory, configItem, shell);
 
@@ -209,7 +209,7 @@ public class DataDialog extends TitleAreaDialog {
 
 		Environment env = Environment.getEnvironment();
 
-		directory = "/user/data/runuser/" + env.getContainer();
+		directory = "/u01/data/admrun/" + env.getContainer();
 
 		final DataItem item = RemoteExecutor.pullDataArtefact(directory, configItem, shell);
 		

@@ -124,7 +124,7 @@ public class TailDialog extends TitleAreaDialog {
 
 		String prefix = prefs.get("prefix", null);
 		
-		directory = "/user/log/runuser/" + prefix.toUpperCase();
+		directory = "/u01/log/admrun/" + prefix.toUpperCase();
 
 		final LoggingItem item = RemoteExecutor.pullLoggingArtefact(directory, configItem, shell);
 

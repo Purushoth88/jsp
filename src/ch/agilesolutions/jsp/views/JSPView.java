@@ -4,6 +4,8 @@ import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -12,8 +14,10 @@ import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.IMenuListener;
@@ -62,11 +66,13 @@ import ch.agilesolutions.jsp.model.Environment;
 import ch.agilesolutions.jsp.utils.RemoteExecutor;
 import ch.agilesolutions.jsp.watchers.ServerLogWatcher;
 
+import jsp.Activator;
+
 /**
  * 
  * IDS root view window
  *
- * @author agilesolutions
+ * @author u24279
  * @version $Revision$, $Date$
  */
 public class JSPView extends ViewPart {
@@ -76,7 +82,7 @@ public class JSPView extends ViewPart {
 	 */
 	public static final String ID = "jsp.views.JSPView";
 
-	public static final String VERSION = "1.0.0";
+	public static final String VERSION = "3.0.0";
 
 	private TextViewer viewer;
 	private Action pullStandaloneXmlMenu;
@@ -98,10 +104,28 @@ public class JSPView extends ViewPart {
 	private Action tailAllLogFilesMenu;
 	private Action dockerMenu;
 	private Action cliMenu;
+	private Action commitMenu;
 
 	private FileDialog fd;
 
 	private String selected;
+
+	/**
+	 * The constructor.
+	 */
+	public JSPView() {
+
+		Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "You are running JSP version " + VERSION));
+
+		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+		Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "You are running container " + prefs.get("container", null)));
+
+		Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "You are running as " + prefs.get("user", null)));
+
+		Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "You are running with name  " + prefs.get("name", null)));
+
+	}
 
 	/**
 	 * This is a callback that will allow us to create the viewer and initialize it.
@@ -141,22 +165,22 @@ public class JSPView extends ViewPart {
 			public void update(final StringBuilder in) {
 
 				display.asyncExec(new Runnable() {
-					public void run() {
+			        public void run() {
 
-						if (text.getCharCount() > 20 && in.length() > 20) {
-							if (!text.getTextRange(text.getCharCount() - 20, 20).equals(
-							                in.toString().substring(in.toString().length() - 20))) {
-								text.replaceTextRange(0, text.getCharCount(), in.toString());
-							}
+				        if (text.getCharCount() > 20 && in.length() > 20) {
+					        if (!text.getTextRange(text.getCharCount() - 20, 20)
+		                                    .equals(in.toString().substring(in.toString().length() - 20))) {
+						        text.replaceTextRange(0, text.getCharCount(), in.toString());
+					        }
 
-						} else {
-							text.replaceTextRange(0, text.getCharCount(), in.toString());
-						}
+				        } else {
+					        text.replaceTextRange(0, text.getCharCount(), in.toString());
+				        }
 
-						viewer.setTopIndex(newDoc.getNumberOfLines());
+				        viewer.setTopIndex(newDoc.getNumberOfLines());
 
-					}
-				});
+			        }
+		        });
 
 			}
 		});
@@ -193,20 +217,22 @@ public class JSPView extends ViewPart {
 		manager.add(new Separator());
 		manager.add(switchEnvironmentMenu);
 		manager.add(houseKeepingMenu);
-//		manager.add(new Separator());
-//		manager.add(listConfigFilesMenu);
-//		manager.add(listDataFileMenu);
-//		manager.add(newDataFileMenu);
+		manager.add(cliMenu);
+		manager.add(commitMenu);
+		// manager.add(new Separator());
+		// manager.add(listConfigFilesMenu);
+		// manager.add(listDataFileMenu);
+		// manager.add(newDataFileMenu);
 		manager.add(new Separator());
 		manager.add(pullServerLogMenu);
-//		manager.add(listLogFileMenu);
-//		manager.add(tailAllLogFilesMenu);
+		// manager.add(listLogFileMenu);
+		// manager.add(tailAllLogFilesMenu);
 		manager.add(new Separator());
 		manager.add(infoMenu);
 		manager.add(new Separator());
 		manager.add(launchConsoleMenu);
 		manager.add(launchAppMenu);
-//		manager.add(openWikiPageMenu);
+		// manager.add(openWikiPageMenu);
 		manager.add(new Separator());
 		manager.add(dockerMenu);
 
@@ -215,6 +241,8 @@ public class JSPView extends ViewPart {
 	private void makeActions() {
 		pullStandaloneXmlMenu = new Action() {
 			public void run() {
+
+				RemoteExecutor.synchronizeConfig(viewer.getControl().getShell());
 
 				final ConfigItem item = RemoteExecutor.pullConfig("standalone.xml", viewer);
 
@@ -232,17 +260,17 @@ public class JSPView extends ViewPart {
 					ITextEditor editor = (ITextEditor) openEditor;
 
 					editor.addPropertyListener(new IPropertyListener() {
-						@Override
-						public void propertyChanged(Object source, int propId) {
-							if (propId == IEditorPart.PROP_DIRTY && source instanceof EditorPart) {
-								EditorPart editor = (EditorPart) source;
-								if (editor.isDirty() == false) {
-									RemoteExecutor.pushConfig("standalone.xml", viewer);
-									showMessage(item.getFilename() + " pushed to " + item.getUnixName());
-								}
-							}
-						}
-					});
+			            @Override
+			            public void propertyChanged(Object source, int propId) {
+				            if (propId == IEditorPart.PROP_DIRTY && source instanceof EditorPart) {
+					            EditorPart editor = (EditorPart) source;
+					            if (editor.isDirty() == false) {
+						            RemoteExecutor.pushConfig("standalone.xml", viewer);
+						            showMessage(item.getFilename() + " pushed to " + item.getUnixName());
+					            }
+				            }
+			            }
+		            });
 				} catch (Exception e) {
 					showError("Error occurred : " + e.getMessage());
 					e.printStackTrace();
@@ -254,57 +282,13 @@ public class JSPView extends ViewPart {
 		pullStandaloneXmlMenu.setText("Pull standalone.xml");
 		pullStandaloneXmlMenu.setToolTipText("Pull JBoss standalone.xml configuration from server");
 		pullStandaloneXmlMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_TOOL_UP));
-		
-		// cli menu
-		
-		cliMenu = new Action() {
-			public void run() {
-				
-				
-				File file = new File(Platform.getLocation().toString() + "/.configuration/custom.cli");
-				file.createNewFile();
-
-				try {
-
-					IFileStore fileStore = EFS.getLocalFileSystem().getStore(file.toURI());
-					FileStoreEditorInput editorInput = new FileStoreEditorInput(fileStore);
-
-					IWorkbenchPage page = getViewSite().getPage();
-
-					IEditorPart openEditor = page.openEditor(editorInput, EditorsUI.DEFAULT_TEXT_EDITOR_ID);
-
-					ITextEditor editor = (ITextEditor) openEditor;
-
-					editor.addPropertyListener(new IPropertyListener() {
-						@Override
-						public void propertyChanged(Object source, int propId) {
-							if (propId == IEditorPart.PROP_DIRTY && source instanceof EditorPart) {
-								EditorPart editor = (EditorPart) source;
-								if (editor.isDirty() == false) {
-									RemoteExecutor.executeCLI("custom.cli", viewer);
-									showMessage(item.getFilename() + " cli executed " + item.getUnixName());
-								}
-							}
-						}
-					});
-
-					// addEditorSavedListener(editor);
-				} catch (Exception e) {
-					showError("Error occurred : " + e.getMessage());
-					e.printStackTrace();
-				}
-
-			}
-
-		};
-		cliMenu.setText("Pull standalone.conf");
-		cliMenu.setToolTipText("Execute CLI on Dockerized JBoss");
-		cliMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_TOOL_UP));
 
 		// standalone conf
 
 		pullStandaloneConfMenu = new Action() {
 			public void run() {
+
+				RemoteExecutor.synchronizeConfig(viewer.getControl().getShell());
 
 				final ConfigItem item = RemoteExecutor.pullConfig("standalone.conf", viewer);
 
@@ -322,17 +306,17 @@ public class JSPView extends ViewPart {
 					ITextEditor editor = (ITextEditor) openEditor;
 
 					editor.addPropertyListener(new IPropertyListener() {
-						@Override
-						public void propertyChanged(Object source, int propId) {
-							if (propId == IEditorPart.PROP_DIRTY && source instanceof EditorPart) {
-								EditorPart editor = (EditorPart) source;
-								if (editor.isDirty() == false) {
-									RemoteExecutor.pushConfig("standalone.conf", viewer);
-									showMessage(item.getFilename() + " pushed to " + item.getUnixName());
-								}
-							}
-						}
-					});
+			            @Override
+			            public void propertyChanged(Object source, int propId) {
+				            if (propId == IEditorPart.PROP_DIRTY && source instanceof EditorPart) {
+					            EditorPart editor = (EditorPart) source;
+					            if (editor.isDirty() == false) {
+						            RemoteExecutor.pushConfig("standalone.conf", viewer);
+						            showMessage(item.getFilename() + " pushed to " + item.getUnixName());
+					            }
+				            }
+			            }
+		            });
 
 					// addEditorSavedListener(editor);
 				} catch (Exception e) {
@@ -345,23 +329,88 @@ public class JSPView extends ViewPart {
 		};
 		pullStandaloneConfMenu.setText("Pull standalone.conf");
 		pullStandaloneConfMenu.setToolTipText("Pull JBoss standalone.conf configuration from server");
-		pullStandaloneConfMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_TOOL_UP));
+		pullStandaloneConfMenu
+		                .setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_TOOL_UP));
+
+		// cli menu
+
+		cliMenu = new Action() {
+			public void run() {
+
+				File file = new File(Platform.getLocation().toString() + "/.configuration/custom.cli");
+
+				try {
+					file.createNewFile();
+
+					Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Opening CLI file " + file.getName()));
+
+					IFileStore fileStore = EFS.getLocalFileSystem().getStore(file.toURI());
+					FileStoreEditorInput editorInput = new FileStoreEditorInput(fileStore);
+
+					IWorkbenchPage page = getViewSite().getPage();
+
+					IEditorPart openEditor = page.openEditor(editorInput, EditorsUI.DEFAULT_TEXT_EDITOR_ID);
+
+					ITextEditor editor = (ITextEditor) openEditor;
+
+					editor.addPropertyListener(new IPropertyListener() {
+			            @Override
+			            public void propertyChanged(Object source, int propId) {
+				            if (propId == IEditorPart.PROP_DIRTY && source instanceof EditorPart) {
+					            EditorPart editor = (EditorPart) source;
+					            if (editor.isDirty() == false) {
+						            Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Start executing CLI"));
+						            RemoteExecutor.publishCLI("custom.cli", viewer);
+						            RemoteExecutor.executeCLI("custom.cli", viewer);
+					            }
+				            }
+			            }
+		            });
+
+					// addEditorSavedListener(editor);
+				} catch (Exception e) {
+					showError("Error occurred : " + e.getMessage());
+					e.printStackTrace();
+				}
+
+			}
+
+		};
+		cliMenu.setText("Execute CLI");
+		cliMenu.setToolTipText("Execute CLI on Dockerized JBoss");
+		cliMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_TOOL_UP));
+
+		// commit menu
+
+		commitMenu = new Action() {
+			public void run() {
+
+				Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Start Commit"));
+				RemoteExecutor.commitContainer(viewer.getControl().getShell());
+
+			}
+
+		};
+		commitMenu.setText("Commit container");
+		commitMenu.setToolTipText("Commit container snapshot to image");
+		commitMenu.setImageDescriptor(
+		                PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ETOOL_DEF_PERSPECTIVE));
 
 		stopServerMenu = new Action() {
 			public void run() {
-
+				Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Stop Docker container"));
 				StringBuilder builder = RemoteExecutor.stopBoss(viewer);
-				// showMessage(builder.toString());
 
 			}
 		};
 
-		stopServerMenu.setText("Stop Server");
-		stopServerMenu.setToolTipText("Stop JBoss server through service script");
+		stopServerMenu.setText("Stop Container");
+		stopServerMenu.setToolTipText("Stop Docker Container");
 		stopServerMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ELCL_STOP));
 
 		startServerMenu = new Action() {
 			public void run() {
+				Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Start Docker container"));
 
 				StringBuilder builder = RemoteExecutor.startJBoss(viewer);
 				// showMessage(builder.toString());
@@ -369,8 +418,8 @@ public class JSPView extends ViewPart {
 			}
 		};
 
-		startServerMenu.setText("Start Server");
-		startServerMenu.setToolTipText("Start JBoss server through service script");
+		startServerMenu.setText("Start Container");
+		startServerMenu.setToolTipText("Start Docker Container");
 		startServerMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ELCL_SYNCED));
 
 		deployMenu = new Action() {
@@ -433,9 +482,23 @@ public class JSPView extends ViewPart {
 						}
 
 						if (hitCount == 1) {
-							// showMessage(String.format("Deploying %s", deployments.get(0)));
-							RemoteExecutor.deploy(directories.get(0) + File.separator + deployments.get(0), deployments.get(0), viewer
-							                .getControl().getShell());
+							Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Start deploying " + deployments.get(0)));
+							RemoteExecutor.deploy(directories.get(0) + File.separator + deployments.get(0), deployments.get(0),
+		                                    viewer.getControl().getShell());
+
+							String configDir = String.format("%s-config\\DEV",
+		                                    directories.get(0).substring(0, directories.get(0).lastIndexOf("-")));
+
+
+							Files.walk(Paths.get(configDir)).filter(path -> !Files.isDirectory(path))
+						      .forEach(path -> {
+						    	  
+						    	  RemoteExecutor.copyFile(viewer, path.getParent().toString(), path.getFileName().toString());
+						    	  
+						    	  RemoteExecutor.dockerCopyFile(viewer.getControl().getShell(), Paths.get(directories.get(0)).getParent().getFileName().toString(), path.getFileName().toString());
+						    	  
+						      });
+
 
 						}
 
@@ -462,7 +525,6 @@ public class JSPView extends ViewPart {
 
 		switchEnvironmentMenu = new Action() {
 			public void run() {
-
 				switchEnvironment();
 
 			}
@@ -470,7 +532,8 @@ public class JSPView extends ViewPart {
 
 		switchEnvironmentMenu.setText("Switch Container");
 		switchEnvironmentMenu.setToolTipText("Run a different Docker Container");
-		switchEnvironmentMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ETOOL_DEF_PERSPECTIVE));
+		switchEnvironmentMenu.setImageDescriptor(
+		                PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ETOOL_DEF_PERSPECTIVE));
 
 		listDataFileMenu = new Action() {
 			public void run() {
@@ -571,7 +634,8 @@ public class JSPView extends ViewPart {
 
 		tailAllLogFilesMenu.setText("Tail All Log Files");
 		tailAllLogFilesMenu.setToolTipText("Add view with tail to another log file");
-		tailAllLogFilesMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ETOOL_DEF_PERSPECTIVE));
+		tailAllLogFilesMenu.setImageDescriptor(
+		                PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ETOOL_DEF_PERSPECTIVE));
 
 		infoMenu = new Action() {
 			public void run() {
@@ -587,12 +651,9 @@ public class JSPView extends ViewPart {
 		launchConsoleMenu = new Action() {
 			public void run() {
 
-
 				Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
-				
-				String url = String.format("http://%s:%s/console", prefs.get("environment", null),prefs.get("adminPort", null));
 
-
+				String url = String.format("http://%s:%s/console", prefs.get("environment", null), prefs.get("adminPort", null));
 
 				try {
 					PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser().openURL(new URL(url));
@@ -611,9 +672,8 @@ public class JSPView extends ViewPart {
 			public void run() {
 
 				Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
-				
-				String url = String.format("http://%s:%s/jdo", prefs.get("environment", null),prefs.get("port", null));
-				
+
+				String url = String.format("http://%s:%s/demo-web", prefs.get("environment", null), prefs.get("port", null));
 
 				try {
 					PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser().openURL(new URL(url));
@@ -634,7 +694,7 @@ public class JSPView extends ViewPart {
 				try {
 
 					PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser()
-					                .openURL(new URL("https://github.com/agilesolutions/jdo"));
+		                            .openURL(new URL("http://agile-solutions.ch"));
 				} catch (PartInitException | MalformedURLException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
@@ -644,9 +704,9 @@ public class JSPView extends ViewPart {
 
 		openWikiPageMenu.setText("Open WIKI page");
 		openWikiPageMenu.setToolTipText("Open WIKI page");
-		openWikiPageMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_LCL_LINKTO_HELP));
-		
-		
+		openWikiPageMenu.setImageDescriptor(
+		                PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_LCL_LINKTO_HELP));
+
 		dockerMenu = new Action() {
 			public void run() {
 
@@ -657,9 +717,9 @@ public class JSPView extends ViewPart {
 			}
 		};
 
-		dockerMenu.setText("Dockerize JCT Profile");
-		dockerMenu.setToolTipText("Dockerize JCT Profile");
-		dockerMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_LCL_LINKTO_HELP));
+		dockerMenu.setText("Create Docker Image");
+		dockerMenu.setToolTipText("Create Docker Image");
+		dockerMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_OBJ_ELEMENT));
 
 	}
 
@@ -682,19 +742,12 @@ public class JSPView extends ViewPart {
 
 		Environment env = Environment.getEnvironment();
 
-		MessageDialog.openInformation(
-		                viewer.getControl().getShell(),
-		                "IDS Space Allocation Information",
-		                "You are working currently on environment " 
-			                			+ "\n\n" + "DOCKER server          : " + env.getServer()
-			                			+ "\n\n" + "JCT profile                : " + env.getName()
-			                			+ "\n" +   "JBAR id                    : " + env.getJbar()
-			                			+ "\n" +   "Docker image            : " + env.getImage()
-			                			+ "\n" +   "Docker container        : " + env.getContainer()
-			                			+ "\n" +   "Port                     : " + env.getPort()
-			                			+ "\n" +   "Admin Port            : " + env.getAdminPort()
-			                			+ "\n" +   "Debug Port             : " + env.getDebugPort()
-		                            + "\n" + "JSP Plugin Version " + VERSION);
+		MessageDialog.openInformation(viewer.getControl().getShell(), "JSP Runtime Information",
+		                "You are working currently as user " + System.getProperty("user.name") + " on environment:" + "\n\n"
+		                                + "Docker image            : " + env.getImage() + "\n" + "Docker container       : "
+		                                + env.getContainer() + "\n" + "Port                            : " + env.getPort() + "\n"
+		                                + "Admin Port                : " + env.getAdminPort() + "\n" + "Debug Port                : "
+		                                + env.getDebugPort() + "\n" + "JSP Plugin Version " + VERSION);
 	}
 
 	private void switchEnvironment() {
@@ -794,7 +847,7 @@ public class JSPView extends ViewPart {
 
 		Environment env = Environment.getEnvironment();
 
-		String directory = "/user/data/runuser/" + env.getName().substring(6, 9).toUpperCase().trim();
+		String directory = "/u01/data/admrun/" + env.getName().substring(6, 9).toUpperCase().trim();
 
 		String items[] = selected.toString().split("\\\\");
 
