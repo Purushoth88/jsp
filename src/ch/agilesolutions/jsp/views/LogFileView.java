@@ -25,6 +25,8 @@ import org.osgi.service.prefs.Preferences;
 import ch.agilesolutions.jsp.listeners.LogFileListener;
 import ch.agilesolutions.jsp.watchers.LogFileWatcher;
 
+import jsp.Activator;
+
 /**
  * 
  * http://www.vogella.com/tutorials/EclipsePlugIn/article.html
@@ -92,11 +94,8 @@ public class LogFileView extends ViewPart {
 	    // TODO Auto-generated method stub
 	    super.init(site);
 	    
-	    Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
-
-		String prefix = prefs.get("tailfile", null);
 		
-		setPartName(prefix);
+		setPartName(Activator.switchLogfile);
 
 	}
 
@@ -131,7 +130,7 @@ public class LogFileView extends ViewPart {
 		PlatformUI.getWorkbench().getHelpSystem().setHelp(viewer.getControl(), "logfile.viewer");
 		final StyledText text = viewer.getTextWidget();
 
-		LogFileWatcher watcher = new LogFileWatcher();
+		LogFileWatcher watcher = new LogFileWatcher(Activator.switchLogfile);
 
 		final Display display = Display.getCurrent();
 		watcher.addListener(new LogFileListener() {

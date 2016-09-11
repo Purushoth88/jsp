@@ -2,12 +2,13 @@ package ch.agilesolutions.jsp.watchers;
 
 import java.io.BufferedReader;
 
-import org.eclipse.core.runtime.preferences.InstanceScope;
-import org.osgi.service.prefs.Preferences;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 
 import ch.agilesolutions.jsp.listeners.LogFileListener;
-import ch.agilesolutions.jsp.model.LoggingItem;
 import ch.agilesolutions.jsp.utils.RemoteExecutor;
+
+import jsp.Activator;
 
 public class LogFileWatcher extends Thread {
 
@@ -16,21 +17,22 @@ public class LogFileWatcher extends Thread {
 	private LogFileListener listener;
 
 	private static String user;
+	
+	private String logFile = "";
+
 
 	
-	public static LoggingItem logFile = new LoggingItem();
+	public LogFileWatcher(String container) {
+		
+		Activator.getDefault().getLog().log(
+		                new Status(IStatus.INFO, "JSP", String.format("Logfile watcher started for %s%s/%s/log/server.log",Activator.LOCAL_PATH,  user, container)));
 
-	static {
 		
-		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
-
-		String container = prefs.get("container", null);
-		
-		logFile.setUnixName("/u01/data/jboss/" + user + "/" + container + "/log/server.log");
-		
+		logFile = String.format("%s%s/%s/log/server.log",Activator.LOCAL_PATH,  user, container);
 		
 	}
 	
+
 	
 
 	public void addListener(LogFileListener lst) {
@@ -47,7 +49,7 @@ public class LogFileWatcher extends Thread {
 
 			try {
 
-				StringBuilder in = RemoteExecutor.refreshApplicationLog(null);
+				StringBuilder in = RemoteExecutor.refreshApplicationLog(logFile);
 
 				this.listener.update(in);
 				
@@ -71,5 +73,6 @@ public class LogFileWatcher extends Thread {
 	public static void setUser(String user) {
 		LogFileWatcher.user = user;
 	}
+
 	
 }

@@ -128,7 +128,7 @@ public class TailDialog extends TitleAreaDialog {
 
 		final LoggingItem item = RemoteExecutor.pullLoggingArtefact(directory, configItem, shell);
 
-		LogFileWatcher.logFile.setUnixName(item.getUnixName());
+		//LogFileWatcher.logFile.setUnixName(item.getUnixName());
 
 		prefs.put("tailfile", item.getFilename());
 
@@ -142,7 +142,6 @@ public class TailDialog extends TitleAreaDialog {
 	        }
 			
 			page.showView("ch.agilesolutions.jsp.views.LogFileView");
-	        
 	        
 	        
         } catch (PartInitException e) {

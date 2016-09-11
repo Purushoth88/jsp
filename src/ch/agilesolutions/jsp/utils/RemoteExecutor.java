@@ -440,11 +440,11 @@ public class RemoteExecutor {
 			Activator.getDefault().getLog()
 			                .log(new Status(IStatus.INFO, "JSP",
 			                                "cd /u01/data/jboss/" + user + "/" + container + "/docker;chmod -R 777 /u01/data/jboss/" + user
-			                                                + ";sudo /usr/bin/docker build --rm -t " + user + "/" + myname + ":" + port
-			                                                + " ."));
+			                                                + "/" + container + ";sudo /usr/bin/docker build --rm -t " + user + "/" + myname
+			                                                + ":" + port + " ."));
 
 			((ChannelExec) channel).setCommand("cd /u01/data/jboss/" + user + "/" + container + "/docker;chmod -R 777 /u01/data/jboss/"
-			                + user + ";sudo /usr/bin/docker build --rm -t " + user + "/" + myname + ":" + port + " .");
+			                + user + "/" + container + ";sudo /usr/bin/docker build --rm -t " + user + "/" + myname + ":" + port + " .");
 
 			channel.setInputStream(null);
 
@@ -546,13 +546,14 @@ public class RemoteExecutor {
 			String image = prefs.get("image", null);
 			String port = prefs.get("port", null);
 			String debugPort = prefs.get("debugPort", null);
+			String adminPort = prefs.get("adminPort", null);
 
 			StringBuilder commands = new StringBuilder();
 
 			commands.append("chown admrun:admjas -R /u01/data/jboss/" + user + "/" + container
 			                + "/deployments;chmod 777 -R /u01/data/jboss/" + user);
-			commands.append(";sudo /usr/bin/docker run -d --name " + container + " -p " + port + ":8080 -p " + debugPort
-			                + ":8787 -v /u01/data/jboss/" + user + "/" + container + "/deployments"
+			commands.append(";sudo /usr/bin/docker run -d --name " + container + " -p " + port + ":8080 -p " + debugPort + ":8787 -p "
+			                + adminPort + ":9999 -v /u01/data/jboss/" + user + "/" + container + "/deployments"
 			                + ":/opt/jboss/wildfly/standalone/deployments/:rw " + " -v /u01/data/jboss/" + user + "/" + name + "/log"
 			                + ":/opt/jboss/wildfly/standalone/log/:rw " + image);
 			commands.append(";sudo /usr/bin/docker cp " + container
@@ -562,11 +563,10 @@ public class RemoteExecutor {
 			                + "/" + name + "/configuration");
 
 			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP",
-			                "sudo /usr/bin/docker run -d --name " + container + " -p " + port + ":8080 -p " + debugPort
-			                                + ":8787 -v /u01/data/jboss/" + user + "/" + container + "/deployments"
-			                                + ":/opt/jboss/wildfly/standalone/deployments/:rw " + "-v /u01/data/jboss/" + user + "/" + name
-			                                + "/configuration" + ":/opt/jboss/wildfly/standalone/configuration/:rw " + "-v /u01/data/jboss/"
-			                                + user + "/" + name + "/log" + ":/opt/jboss/wildfly/standalone/log/:rw " + image));
+			                "sudo /usr/bin/docker run -d --name " + container + " -p " + port + ":8080 -p " + debugPort + ":8787 -p "
+			                                + adminPort + ":9999 -v /u01/data/jboss/" + user + "/" + container + "/deployments"
+			                                + ":/opt/jboss/wildfly/standalone/deployments/:rw " + " -v /u01/data/jboss/" + user + "/" + name
+			                                + "/log" + ":/opt/jboss/wildfly/standalone/log/:rw " + image));
 
 			((ChannelExec) channel).setCommand(commands.toString());
 
@@ -752,8 +752,8 @@ public class RemoteExecutor {
 
 			StringBuilder commands = new StringBuilder();
 
-			commands.append("sudo /usr/bin/docker exec -ti " 
-			                + container + " mkdir /opt/jboss/wildfly/standalone/configuration/" + directory);
+			commands.append("sudo /usr/bin/docker exec -ti " + container + " mkdir /opt/jboss/wildfly/standalone/configuration/"
+			                + directory);
 			commands.append(";sudo /usr/bin/docker cp " + Activator.LOCAL_PATH + user + "/" + container + "/configuration/" + file + " "
 			                + container + ":/opt/jboss/wildfly/standalone/configuration/" + directory + "/" + file);
 
@@ -826,7 +826,7 @@ public class RemoteExecutor {
 	 * @param shell
 	 * @return
 	 */
-	public static void copyFile(TextViewer viewer, String directory, String file) {
+	public static void copyFile(Shell shell, String directory, String file) {
 
 		try {
 
@@ -834,7 +834,7 @@ public class RemoteExecutor {
 
 			String container = prefs.get("container", null);
 
-			Session session = openSession(viewer.getControl().getShell());
+			Session session = openSession(shell);
 
 			Channel channel = session.openChannel("sftp");
 			channel.connect();
@@ -847,7 +847,7 @@ public class RemoteExecutor {
 			sftpChannel.exit();
 
 		} catch (Exception e) {
-			showError(viewer.getControl().getShell(), e.getMessage());
+			showError(shell, e.getMessage());
 		}
 
 	}
@@ -1465,7 +1465,7 @@ public class RemoteExecutor {
 	 * @param viewer
 	 * @return
 	 */
-	public static StringBuilder refreshApplicationLog(TextViewer viewer) {
+	public static StringBuilder refreshApplicationLog(String logFile) {
 
 		InputStream in = null;
 
@@ -1481,7 +1481,7 @@ public class RemoteExecutor {
 
 			Channel channel = session.openChannel("exec");
 
-			((ChannelExec) channel).setCommand("tail -n 100 " + Activator.LOCAL_PATH + user + "/" + container + "/log/server.log");
+			((ChannelExec) channel).setCommand("tail -n 100 " + logFile);
 
 			channel.setInputStream(null);
 
@@ -1514,7 +1514,7 @@ public class RemoteExecutor {
 						Thread.sleep(1000);
 						loopCount++;
 					} catch (Exception ee) {
-						showError(viewer.getControl().getShell(), ee.getMessage());
+						ee.printStackTrace();
 					}
 				}
 				// capture the last line
@@ -1947,6 +1947,78 @@ public class RemoteExecutor {
 	}
 
 	/**
+	 * List all log files available to a combobox to be selected.
+	 * 
+	 * @return
+	 */
+	public static List<String> listPrivateActiveContainers() {
+
+		InputStream in = null;
+
+		StringBuilder builder = new StringBuilder();
+
+		List<String> images = new ArrayList<>();
+
+		try {
+
+			Session session = openSession();
+
+			Channel channel = session.openChannel("exec");
+
+			((ChannelExec) channel).setPty(true);
+
+			((ChannelExec) channel).setCommand(
+			                "sudo /usr/bin/docker ps -a  --filter name=" + user + " --filter status=running --format \"{{.Names}}\"");
+
+			channel.setInputStream(null);
+
+			((ChannelExec) channel).setErrStream(System.err);
+
+			in = channel.getInputStream();
+
+			channel.connect();
+
+			byte[] tmp = new byte[1024];
+
+			while (true) {
+				while (in.available() > 0) {
+					int i = in.read(tmp, 0, 1024);
+					if (i < 0)
+						break;
+					builder.append(new String(tmp, 0, i));
+				}
+				if (channel.isClosed()) {
+					break;
+				}
+				try {
+					Thread.sleep(1000);
+				} catch (Exception ee) {
+					ee.printStackTrace();
+				}
+			}
+
+			// match first available port
+			Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+			String container = prefs.get("container", null);
+
+			Scanner scan = new Scanner(builder.toString());
+			while (scan.hasNextLine()) {
+				String name = scan.nextLine();
+				if (name.startsWith(user) && !name.equals(container)) {
+					images.add(name);
+				}
+			}
+
+		} catch (Exception e) {
+			e.printStackTrace();
+
+		}
+		return images;
+
+	}
+
+	/**
 	 * List all available data directory for a specific JB jboss instance.
 	 * 
 	 * @return
@@ -2084,10 +2156,154 @@ public class RemoteExecutor {
 			((ChannelExec) channel).setPty(true);
 
 			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "sudo /usr/bin/docker rm " + name
-			                + ";sudo /usr/bin/docker rmi " + image + ";rm -R /u01/data/jboss/" + user + "/deployments/" + name));
+			                + ";sudo /usr/bin/docker rmi " + image + ";rm -R /u01/data/jboss/" + user + "/" + name));
 
 			((ChannelExec) channel).setCommand("sudo /usr/bin/docker rm " + name + ";sudo /usr/bin/docker rmi " + image
-			                + ";rm -R /u01/data/jboss/" + user + "/deployments/" + name);
+			                + ";rm -Rf /u01/data/jboss/" + user + "/" + name);
+
+			channel.setInputStream(null);
+
+			((ChannelExec) channel).setErrStream(System.err);
+
+			in = channel.getInputStream();
+
+			channel.connect();
+
+			byte[] tmp = new byte[1024];
+
+			boolean firsttime = true;
+
+			int retries = 0;
+
+			try {
+				while (true) {
+					while (in.available() > 0) {
+						int i = in.read(tmp, 0, 1024);
+						if (i < 0)
+							break;
+						firsttime = false;
+						builder.append(new String(tmp, 0, i));
+					}
+					if (!firsttime) {
+						break;
+					}
+					if (retries > MAX_RETRIES) {
+						break;
+					}
+					try {
+						Thread.sleep(1000);
+						retries++;
+					} catch (Exception ee) {
+						System.out.println(ee.getMessage());
+					}
+				}
+			} catch (Exception e) {
+				System.out.println(e.getMessage());
+			}
+
+			channel.disconnect();
+
+		} catch (Exception e) {
+			System.out.println(e.getMessage());
+		}
+		return builder;
+
+	}
+
+	public static StringBuilder spinUpContainer(String name) {
+
+		InputStream in = null;
+
+		StringBuilder builder = new StringBuilder();
+
+		Activator.runningInstances.add(name);
+
+		try {
+
+			String image = String.format("%s/%s:%s", name.substring(0, 6), name.substring(6, name.length() - 4),
+			                name.substring(name.length() - 4));
+
+			Session session = openSession();
+
+			Channel channel = session.openChannel("exec");
+
+			((ChannelExec) channel).setPty(true);
+
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "sudo /usr/bin/docker start " + name));
+
+			((ChannelExec) channel).setCommand("sudo /usr/bin/docker start " + name);
+
+			channel.setInputStream(null);
+
+			((ChannelExec) channel).setErrStream(System.err);
+
+			in = channel.getInputStream();
+
+			channel.connect();
+
+			byte[] tmp = new byte[1024];
+
+			boolean firsttime = true;
+
+			int retries = 0;
+
+			try {
+				while (true) {
+					while (in.available() > 0) {
+						int i = in.read(tmp, 0, 1024);
+						if (i < 0)
+							break;
+						firsttime = false;
+						builder.append(new String(tmp, 0, i));
+					}
+					if (!firsttime) {
+						break;
+					}
+					if (retries > MAX_RETRIES) {
+						break;
+					}
+					try {
+						Thread.sleep(1000);
+						retries++;
+					} catch (Exception ee) {
+						System.out.println(ee.getMessage());
+					}
+				}
+			} catch (Exception e) {
+				System.out.println(e.getMessage());
+			}
+
+			channel.disconnect();
+
+		} catch (Exception e) {
+			System.out.println(e.getMessage());
+		}
+		return builder;
+
+	}
+
+	public static StringBuilder spinDownContainer(String name) {
+
+		InputStream in = null;
+
+		StringBuilder builder = new StringBuilder();
+
+		Activator.runningInstances.remove(name);
+
+		try {
+
+			String image = String.format("%s/%s:%s", name.substring(0, 6), name.substring(6, name.length() - 4),
+			                name.substring(name.length() - 4));
+
+			Session session = openSession();
+
+			Channel channel = session.openChannel("exec");
+
+			((ChannelExec) channel).setPty(true);
+
+			Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "sudo /usr/bin/docker stop " + name));
+
+			((ChannelExec) channel).setCommand("sudo /usr/bin/docker stop " + name);
 
 			channel.setInputStream(null);
 

@@ -1,6 +1,9 @@
 package ch.agilesolutions.jsp.dialogs;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +24,8 @@ import org.eclipse.swt.widgets.Shell;
 import ch.agilesolutions.jsp.utils.RemoteExecutor;
 
 public class DeployDialog extends TitleAreaDialog {
+
+	private Shell shell;
 
 	private String deployment;
 
@@ -50,6 +55,7 @@ public class DeployDialog extends TitleAreaDialog {
 
 	@Override
 	protected Control createDialogArea(Composite parent) {
+		this.shell = parent.getShell();
 		Composite area = (Composite) super.createDialogArea(parent);
 		Composite container = new Composite(area, SWT.NONE);
 		container.setLayoutData(new GridData(GridData.FILL_BOTH));
@@ -106,6 +112,25 @@ public class DeployDialog extends TitleAreaDialog {
 
 		// showMessage(String.format("Deploying %s", deployment));
 		RemoteExecutor.deploy(mapDirectories.get(deployment) + File.separator + deployment, deployment, getShell());
+
+		String configDir = String.format("%s-config\\DEV",
+						mapDirectories.get(deployment).substring(0, mapDirectories.get(deployment).lastIndexOf("-")));
+
+
+		try {
+			Files.walk(Paths.get(configDir)).filter(path -> !Files.isDirectory(path))
+			  .forEach(path -> {
+				  
+				  RemoteExecutor.copyFile(shell, path.getParent().toString(), path.getFileName().toString());
+				  
+				  RemoteExecutor.dockerCopyFile(shell, Paths.get(mapDirectories.get(deployment)).getParent().getFileName().toString(), path.getFileName().toString());
+				  
+			  });
+		} catch (IOException e) {
+			MessageDialog.openError(shell, "JSP Exception Occurred", e.getMessage());
+			e.printStackTrace();
+		}
+
 
 	}
 

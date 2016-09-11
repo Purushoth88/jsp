@@ -50,6 +50,7 @@ import org.eclipse.ui.part.ViewPart;
 import org.eclipse.ui.texteditor.ITextEditor;
 import org.osgi.service.prefs.Preferences;
 
+import ch.agilesolutions.jsp.dialogs.CloseablesDialog;
 import ch.agilesolutions.jsp.dialogs.ConfigurationDialog;
 import ch.agilesolutions.jsp.dialogs.DataDialog;
 import ch.agilesolutions.jsp.dialogs.DeployDialog;
@@ -57,6 +58,7 @@ import ch.agilesolutions.jsp.dialogs.EnvironmentDialog;
 import ch.agilesolutions.jsp.dialogs.HouseKeepingDialog;
 import ch.agilesolutions.jsp.dialogs.LoggingDialog;
 import ch.agilesolutions.jsp.dialogs.ProfileDialog;
+import ch.agilesolutions.jsp.dialogs.RunnablesDialog;
 import ch.agilesolutions.jsp.dialogs.TailDialog;
 import ch.agilesolutions.jsp.dialogs.UploadDialog;
 import ch.agilesolutions.jsp.listeners.LogFileListener;
@@ -105,6 +107,8 @@ public class JSPView extends ViewPart {
 	private Action dockerMenu;
 	private Action cliMenu;
 	private Action commitMenu;
+	private Action spinUpMenu;
+	private Action spinDownMenu;
 
 	private FileDialog fd;
 
@@ -186,6 +190,13 @@ public class JSPView extends ViewPart {
 		});
 
 		watcher.start();
+		
+		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+		String container = prefs.get("container", null);
+		
+		setPartName("JSP : " + container);
+
 
 	}
 
@@ -219,12 +230,15 @@ public class JSPView extends ViewPart {
 		manager.add(houseKeepingMenu);
 		manager.add(cliMenu);
 		manager.add(commitMenu);
-		// manager.add(new Separator());
+		manager.add(new Separator());
 		// manager.add(listConfigFilesMenu);
 		// manager.add(listDataFileMenu);
 		// manager.add(newDataFileMenu);
 		manager.add(new Separator());
-		manager.add(pullServerLogMenu);
+		manager.add(houseKeepingMenu);
+		manager.add(new Separator());
+		manager.add(spinUpMenu);
+		manager.add(spinDownMenu);
 		// manager.add(listLogFileMenu);
 		// manager.add(tailAllLogFilesMenu);
 		manager.add(new Separator());
@@ -404,8 +418,8 @@ public class JSPView extends ViewPart {
 			}
 		};
 
-		stopServerMenu.setText("Stop Container");
-		stopServerMenu.setToolTipText("Stop Docker Container");
+		stopServerMenu.setText("Stop JBoss");
+		stopServerMenu.setToolTipText("Stop JBoss");
 		stopServerMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ELCL_STOP));
 
 		startServerMenu = new Action() {
@@ -418,8 +432,8 @@ public class JSPView extends ViewPart {
 			}
 		};
 
-		startServerMenu.setText("Start Container");
-		startServerMenu.setToolTipText("Start Docker Container");
+		startServerMenu.setText("Start JBoss");
+		startServerMenu.setToolTipText("Start JBoss");
 		startServerMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ELCL_SYNCED));
 
 		deployMenu = new Action() {
@@ -493,7 +507,7 @@ public class JSPView extends ViewPart {
 							Files.walk(Paths.get(configDir)).filter(path -> !Files.isDirectory(path))
 						      .forEach(path -> {
 						    	  
-						    	  RemoteExecutor.copyFile(viewer, path.getParent().toString(), path.getFileName().toString());
+						    	  RemoteExecutor.copyFile(viewer.getControl().getShell(), path.getParent().toString(), path.getFileName().toString());
 						    	  
 						    	  RemoteExecutor.dockerCopyFile(viewer.getControl().getShell(), Paths.get(directories.get(0)).getParent().getFileName().toString(), path.getFileName().toString());
 						    	  
@@ -624,6 +638,34 @@ public class JSPView extends ViewPart {
 		houseKeepingMenu.setToolTipText("Remove Docker Images");
 		houseKeepingMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ELCL_REMOVE));
 
+		spinUpMenu = new Action() {
+			public void run() {
+
+				RunnablesDialog dialog = new RunnablesDialog(getViewSite().getPage(),viewer.getControl().getShell());
+
+				dialog.open();
+
+			}
+		};
+
+		spinUpMenu.setText("Start Container");
+		spinUpMenu.setToolTipText("Start Container");
+		spinUpMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_OBJS_TASK_TSK));
+
+		spinDownMenu = new Action() {
+			public void run() {
+
+				CloseablesDialog dialog = new CloseablesDialog(getViewSite().getPage(),viewer.getControl().getShell());
+
+				dialog.open();
+
+			}
+		};
+
+		spinDownMenu.setText("Stop Container");
+		spinDownMenu.setToolTipText("Stop Container");
+		spinDownMenu.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(ISharedImages.IMG_ELCL_STOP));
+
 		tailAllLogFilesMenu = new Action() {
 			public void run() {
 
@@ -673,7 +715,7 @@ public class JSPView extends ViewPart {
 
 				Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
 
-				String url = String.format("http://%s:%s/demo-web", prefs.get("environment", null), prefs.get("port", null));
+				String url = String.format("http://%s:%s/client", prefs.get("environment", null), prefs.get("port", null));
 
 				try {
 					PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser().openURL(new URL(url));
@@ -694,7 +736,7 @@ public class JSPView extends ViewPart {
 				try {
 
 					PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser()
-		                            .openURL(new URL("http://agile-solutions.ch"));
+		                            .openURL(new URL("https://wiki.agilesolutions.com/display/JCC/IDS+Instruction+Page"));
 				} catch (PartInitException | MalformedURLException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
@@ -713,6 +755,13 @@ public class JSPView extends ViewPart {
 				ProfileDialog dialog = new ProfileDialog(viewer.getControl().getShell());
 
 				dialog.open();
+				
+				Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+				String container = prefs.get("container", null);
+				
+				setPartName("JSP : " + container);
+
 
 			}
 		};
@@ -755,6 +804,13 @@ public class JSPView extends ViewPart {
 		EnvironmentDialog dialog = new EnvironmentDialog(viewer.getControl().getShell());
 
 		dialog.open();
+		
+		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
+
+		String container = prefs.get("container", null);
+
+		setPartName("JSP : " + container);
+
 
 	}
 

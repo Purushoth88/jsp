@@ -11,7 +11,7 @@ import javax.ws.rs.core.Response;
 
 public class RestService {
 
-	private static final String REST_SERVICE_URL = "http://www.agile-solutions.ch/JDO/rest/ids/spaces";
+	private static final String REST_SERVICE_URL = "http://www.agilesolutions.com:8084/jdo/rest/ids/spaces";
 
 	public List<IDSSpace> getSpace() {
 		

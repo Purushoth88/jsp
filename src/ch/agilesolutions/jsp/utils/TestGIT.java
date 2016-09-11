@@ -7,7 +7,7 @@ import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 
 public class TestGIT {
 
-	private static final String REMOTE_URL = "http://github.agile-solutions.ch/scm/jct/idsstore.git";
+	private static final String REMOTE_URL = "http://stash.agilesolutions.com/scm/jct/idsstore.git";
 
 	public static void main(String[] args) {
 		new TestGIT().connect();
@@ -33,9 +33,9 @@ public class TestGIT {
 
 			git.add().addFilepattern(".").call();
 
-			git.commit().setCommitter("info", "info@agile-solutions.ch").setMessage("Initial create JBoss configuration").call();
+			git.commit().setCommitter("jsp", "jsp@agilesolutions.com").setMessage("Initial create JBoss configuration").call();
 
-			git.push().setCredentialsProvider(new UsernamePasswordCredentialsProvider("info", "info")).call();
+			git.push().setCredentialsProvider(new UsernamePasswordCredentialsProvider("jsp", "jsp")).call();
 
 		} catch (Exception e) {
 			e.printStackTrace();

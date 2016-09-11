@@ -1,15 +1,6 @@
 package ch.agilesolutions.jsp.dialogs;
 
-import java.awt.PageAttributes.MediaType;
-import java.io.File;
-import java.io.FileWriter;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-
-import javax.net.ssl.SSLContext;
-import javax.xml.ws.Response;
 
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.preferences.InstanceScope;
@@ -29,8 +20,6 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
 import org.osgi.service.prefs.Preferences;
 
-import ch.agilesolutions.jsp.model.Profile;
-import ch.agilesolutions.jsp.utils.GsonMessageBodyHandler;
 import ch.agilesolutions.jsp.utils.RemoteExecutor;
 
 public class ProfileDialog extends TitleAreaDialog {
@@ -64,7 +53,7 @@ public class ProfileDialog extends TitleAreaDialog {
 	@Override
 	public void create() {
 		super.create();
-		setTitle("Select JCT Profile to be dockerized");
+		setTitle("Select a base image to creating your own image and container");
 
 	}
 
@@ -179,6 +168,8 @@ public class ProfileDialog extends TitleAreaDialog {
 	@Override
 	protected void okPressed() {
 
+		getButton(OK).setEnabled(false);
+		
 		submitBuild();
 		super.okPressed();
 	}

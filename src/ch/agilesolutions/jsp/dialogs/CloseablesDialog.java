@@ -3,10 +3,7 @@ package ch.agilesolutions.jsp.dialogs;
 import java.util.Arrays;
 import java.util.List;
 
-import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.preferences.InstanceScope;
-import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.dialogs.TitleAreaDialog;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
@@ -18,24 +15,30 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
+import org.eclipse.ui.IViewPart;
+import org.eclipse.ui.IWorkbenchPage;
 import org.osgi.service.prefs.Preferences;
 
 import ch.agilesolutions.jsp.utils.RemoteExecutor;
 
 import jsp.Activator;
 
-public class EnvironmentDialog extends TitleAreaDialog {
+public class CloseablesDialog extends TitleAreaDialog {
 
 	private String environment;
+	
+	private IWorkbenchPage page;
 
-	public EnvironmentDialog(Shell parentShell) {
+
+	public CloseablesDialog(IWorkbenchPage page,Shell parentShell) {
 		super(parentShell);
+		this.page = page;
 	}
 
 	@Override
 	public void create() {
 		super.create();
-		setTitle("Switch Docker Container");
+		setTitle("Stop Containers");
 
 	}
 
@@ -56,7 +59,7 @@ public class EnvironmentDialog extends TitleAreaDialog {
 	private void createFirstName(Composite container) {
 		Label lbtFirstName = new Label(container, SWT.NONE);
 
-		lbtFirstName.setText("Container");
+		lbtFirstName.setText("Environment");
 
 		GridData dataFirstName = new GridData();
 		dataFirstName.grabExcessHorizontalSpace = true;
@@ -66,7 +69,7 @@ public class EnvironmentDialog extends TitleAreaDialog {
 
 		c1.setBounds(50, 50, 150, 65);
 		
-		List<String> containers = RemoteExecutor.listPrivateContainers();
+		List<String> containers = RemoteExecutor.listPrivateActiveContainers();
 		
 		String items[] = containers.toArray(new String[containers.size()]);
 
@@ -76,6 +79,7 @@ public class EnvironmentDialog extends TitleAreaDialog {
 
 		if (containers.size()> 0) {
 			c1.setText(containers.get(0));
+			environment = containers.get(0);
 		}
 
 		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
@@ -107,31 +111,11 @@ public class EnvironmentDialog extends TitleAreaDialog {
 	// as soon as the Dialog closes
 	private void saveInput() {
 
-		// https://wiki.eclipse.org/FAQ_How_do_I_load_and_save_plug-in_preferences%3F
-
-		RemoteExecutor.stopBoss();
+		RemoteExecutor.spinDownContainer(environment);
 		
+		IViewPart part = Activator.parts.get(environment);
 		
-		Preferences prefs = InstanceScope.INSTANCE.getNode("jsp");
-
-		prefs.put("container", environment);
-		prefs.put("image", String.format("%s/%s:%s", environment.substring(0, 6),environment.substring(6,environment.length()-4),environment.substring(environment.length()-4)));
-		int availablePort = Integer.valueOf(environment.substring(environment.length()-4));
-		prefs.put("port",Integer.toString(availablePort) );
-		// shift them all up with the new offset
-		prefs.put("adminPort", Integer.toString(9999 + (availablePort - 8080)));
-		prefs.put("debugPort", Integer.toString(8787 + (availablePort - 8080)));
-
-
-		try {
-			prefs.flush();
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		Activator.getDefault().getLog().log(new Status(IStatus.INFO, "JSP", "Switch to container " + environment));
-		RemoteExecutor.startJBoss();
-		//MessageDialog.openInformation(getShell(), "JSP View", String.format("Switched Docker Container %s!", environment));
-
+		page.hideView(part);
 
 	}
 
